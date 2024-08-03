@@ -11,15 +11,43 @@ if !async_http.have_access() then
     util.stop_script()
 end
 
+-- Natives
+
+util.require_natives(natives_version)
+
 -- Required Files
+
+for i, group in all_modules do
+    for group as module do
+        if !filesystem.exists(scriptdir.."lib/"..module.path..".pluto") then
+            local msgt = "Missing required module "..module.name.." in group '"..i.."'. "
+            local mext1 = "Functionality may be limited."
+            local mext2 = "Stopping script. | Download all required files once from https://github.com/iP0G/Xcript and the auto-updater will keep the script updated."
+            pluto_switch i do
+                case 'dev_modules':
+                    dev_vers = false
+                    break
+                case 'script_modules':
+                    util.toast(msgt..mext1)
+                    util.log("[Xcript | WARN]"..msgt..mext1)
+                    break
+                case 'util_modules':
+                case 'required_modules':
+                    util.toast(msgt..mext2)
+                    util.log("[Xcript | ERROR]"..msgt..mext2)
+                    util.stop_script()
+                    break
+                case 'private_modules':
+                    private_vers = false
+                    break
+            end
+        end
+    end
+end
 
 local Functions = require "Xcript.functions"
 local funcs = require("Xcript.funcs")
 local globals = require("Xcript.globals")
-
--- Natives
-
-util.require_natives(natives_version)
 
 -- Store Files
 
@@ -65,11 +93,12 @@ if !dev_vers then
             log("Found new version: "..result, "AUTO UPDATE")
             local modules = {}
             for all_modules.script_modules as module do
-                log(scriptdir.."lib/"..module.path.."\nhttps://raw.githubusercontent.com/iP0G/Xcript/main/lib/"..module.path, "d")
                 modules[#modules + 1] = module.path
             end
             for all_modules.required_modules as module do
-                log(scriptdir.."lib/"..module.path.."\nhttps://raw.githubusercontent.com/iP0G/Xcript/main/lib/"..module.path, "d")
+                modules[#modules + 1] = module.path
+            end
+            for all_modules.util_modules as module do
                 modules[#modules + 1] = module.path
             end
             for modules as module do
@@ -101,43 +130,17 @@ if !dev_vers then
     while !response1 do wait() end
     if needsUpdate then
         while !updateDone do wait() end
+    else
+        log(SCRIPT_NAME.." is up to date", script_version)
     end
     if needsUpdate and !updateError then
         wait(10)
         log("Update Success! Restarting "..SCRIPT_NAME.."...", "AUTO UPDATE")
-        -- util.restart_script()
+        util.restart_script()
     end
 end
 
 -- Modules
-
-for i, group in all_modules do
-    for group as module do
-        if !filesystem.exists(scriptdir.."lib/"..module.path..".pluto") then
-            local msgt = "Missing required module "..module.name.." in group '"..i.."'. "
-            local mext1 = "Functionality may be limited."
-            local mext2 = "Stopping script."
-            pluto_switch i do
-                case 'dev_modules':
-                    dev_vers = false
-                    break
-                case 'script_modules':
-                    notify(msgt..mext1)
-                    log(msgt..mext1, "WARN")
-                    break
-                case 'required_modules':
-                    notify(msgt..mext2)
-                    log(msgt..mext2, "ERROR")
-                    util.stop_script()
-                    break
-                case 'private_modules':
-                    private_vers = false
-                    break
-            end
-        end
-    end
-end
-
 util.execute_in_os_thread(function()
     for all_modules.private_modules as module do
         xpcall(
@@ -164,7 +167,7 @@ util.execute_in_os_thread(function()
         end
     end
     for i, group in all_modules do
-        if i != 'dev_modules' and i != 'private_modules' then
+        if i != 'dev_modules' and i != 'private_modules' and i != 'util_modules' then
             for group as module do
                 xpcall(
                     function()
