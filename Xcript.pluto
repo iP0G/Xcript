@@ -11,43 +11,88 @@ if !async_http.have_access() then
     util.stop_script()
 end
 
--- Natives
-
-util.require_natives(natives_version)
-
 -- Required Files
 
-for i, group in all_modules do
-    for group as module do
-        if !filesystem.exists(scriptdir.."lib/"..module.path..".pluto") then
-            local msgt = "Missing required module "..module.name.." in group '"..i.."'. "
-            local mext1 = "Functionality may be limited."
-            local mext2 = "Stopping script. | Download all required files once from https://github.com/iP0G/Xcript and the auto-updater will keep the script updated."
-            pluto_switch i do
-                case 'dev_modules':
-                    dev_vers = false
-                    break
-                case 'script_modules':
-                    util.toast(msgt..mext1)
-                    util.log("[Xcript | WARN]"..msgt..mext1)
-                    break
-                case 'util_modules':
-                case 'required_modules':
-                    util.toast(msgt..mext2)
-                    util.log("[Xcript | ERROR]"..msgt..mext2)
-                    util.stop_script()
-                    break
-                case 'private_modules':
-                    private_vers = false
-                    break
+local missing_util_modules = false
+xpcall(
+    function()
+        local Functions = require "Xcript.functions"
+        local funcs = require("Xcript.funcs")
+        local globals = require("Xcript.globals")
+    end,
+    function(err)
+        missing_util_modules = true
+        util.log("[Xcript | ERROR] Error loading Util Modules. Running the auto-updater to try to fix this..")
+        util.toast("Error loading Util Modules. Running the auto-updater to try to fix this..")
+    end
+)
+
+-- Auto Update
+if !dev_vers then
+    local response1 = false
+    local updateError = false
+    local updateDone = false
+    local needsUpdate = false
+    async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/version", function(result)
+        if !script_version or result != script_version or missing_util_modules then
+            needsUpdate = true
+            if missing_util_modules then
+                util.log("[Xcript | AUTO UPDATE] Attempting to retrieve missing files for version "..result)
+            else
+                util.log("[Xcript | AUTO UPDATE] Found new version: "..result)
             end
+            local modules = {}
+            for all_modules.script_modules as module do
+                modules[#modules + 1] = module.path
+            end
+            for all_modules.required_modules as module do
+                modules[#modules + 1] = module.path
+            end
+            for all_modules.util_modules as module do
+                modules[#modules + 1] = module.path
+            end
+            for modules as module do
+                async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/lib/"..module, function(result)
+                    if !result then
+                        util.log("[Xcript | ERROR] Unknown error downloading update.")
+                        updateError = true
+                        return
+                    end
+                    local file = io.open(scriptdir.."lib/"..module, "wb")
+                    file:write(result)
+                    file:close()
+                end,
+                function(err)
+                    util.log("[Xcript | ERROR] Error getting update for module: "..module.."\nError: "..err)
+                    updateError = true
+                end)
+                async_http.dispatch()
+            end
+            updateDone = true
         end
+        response1 = true
+    end,
+    function(err)
+        util.log("[Xcript | ERROR] Error checking for update: "..err)
+        response1 = true
+    end)
+    async_http.dispatch()
+    while !response1 do wait() end
+    if needsUpdate then
+        while !updateDone do wait() end
+    else
+        log(SCRIPT_NAME.." is up to date", script_version)
+    end
+    if needsUpdate and !updateError then
+        wait(10)
+        util.log("[Xcript | AUTO UPDATE] Update Success! Restarting "..SCRIPT_NAME.."...")
+        util.restart_script()
     end
 end
 
-local Functions = require "Xcript.functions"
-local funcs = require("Xcript.funcs")
-local globals = require("Xcript.globals")
+-- Natives
+
+util.require_natives(natives_version)
 
 -- Store Files
 
@@ -81,66 +126,36 @@ if !filesystem.exists(PERSISTENT_MODDER_LOGFILE) then
     file:close()
 end
 
--- Auto Update
-if !dev_vers then
-    local response1 = false
-    local updateError = false
-    local updateDone = false
-    local needsUpdate = false
-    async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/version", function(result)
-        if !script_version or result != script_version then
-            needsUpdate = true
-            log("Found new version: "..result, "AUTO UPDATE")
-            local modules = {}
-            for all_modules.script_modules as module do
-                modules[#modules + 1] = module.path
+-- Modules
+
+for i, group in all_modules do
+    for group as module do
+        if !filesystem.exists(scriptdir.."lib/"..module.path..".pluto") then
+            local msgt = "Missing required module "..module.name.." in group '"..i.."'. "
+            local mext1 = "Functionality may be limited."
+            local mext2 = "Stopping script. | Download all required files once from https://github.com/iP0G/Xcript and the auto-updater will keep the script updated."
+            pluto_switch i do
+                case 'dev_modules':
+                    dev_vers = false
+                    break
+                case 'script_modules':
+                    util.toast(msgt..mext1)
+                    util.log("[Xcript | WARN]"..msgt..mext1)
+                    break
+                case 'util_modules':
+                case 'required_modules':
+                    util.toast(msgt..mext2)
+                    util.log("[Xcript | ERROR]"..msgt..mext2)
+                    util.stop_script()
+                    break
+                case 'private_modules':
+                    private_vers = false
+                    break
             end
-            for all_modules.required_modules as module do
-                modules[#modules + 1] = module.path
-            end
-            for all_modules.util_modules as module do
-                modules[#modules + 1] = module.path
-            end
-            for modules as module do
-                async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/lib/"..module, function(result)
-                    if !result then
-                        log("Unknown error downloading update.", "ERROR")
-                        updateError = true
-                        return
-                    end
-                    local file = io.open(scriptdir.."lib/"..module, "wb")
-                    file:write(result)
-                    file:close()
-                end,
-                function(err)
-                    log("Error getting update for module: "..module.."\nError: "..err, "ERROR")
-                    updateError = true
-                end)
-                async_http.dispatch()
-            end
-            updateDone = true
         end
-        response1 = true
-    end,
-    function(err)
-        log("Error checking for update: "..err, "ERROR")
-        response1 = true
-    end)
-    async_http.dispatch()
-    while !response1 do wait() end
-    if needsUpdate then
-        while !updateDone do wait() end
-    else
-        log(SCRIPT_NAME.." is up to date", script_version)
-    end
-    if needsUpdate and !updateError then
-        wait(10)
-        log("Update Success! Restarting "..SCRIPT_NAME.."...", "AUTO UPDATE")
-        util.restart_script()
     end
 end
 
--- Modules
 util.execute_in_os_thread(function()
     for all_modules.private_modules as module do
         xpcall(
