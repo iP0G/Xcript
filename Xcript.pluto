@@ -1,0 +1,267 @@
+--[[
+          Lua made by L_una-chan (GTAO)
+          Discord: ip0g
+]]
+
+this_load_start_time = os.clock()
+
+if !async_http.have_access() then
+    util.log("*Xcript requires internet access to run.*")
+    util.toast("*Xcript requires internet access to run.*")
+    util.stop_script()
+end
+
+-- Required Files
+
+local Functions = require "Xcript.functions"
+local funcs = require("Xcript.funcs")
+local globals = require("Xcript.globals")
+
+-- Natives
+
+util.require_natives(natives_version)
+
+-- Store Files
+
+if !filesystem.exists(XcriptDir) then
+	filesystem.mkdir(XcriptDir)
+end
+
+if !filesystem.exists(storeDir) then
+	filesystem.mkdir(storeDir)
+end
+
+if !filesystem.exists(storeDir.."Players") then
+	filesystem.mkdir(storeDir.."Players")
+end
+
+if !filesystem.exists(PERSISTENT_REMOVEDCOUNT_FILE) then
+    local file = io.open(PERSISTENT_REMOVEDCOUNT_FILE, "w")
+    if file == nil then return end
+    file:write("0")
+    file:close()
+end
+
+if !filesystem.exists(PREV_EXEC_STORE) then
+    WriteExecStore()
+end
+
+if !filesystem.exists(PERSISTENT_MODDER_LOGFILE) then
+    local file = io.open(PERSISTENT_MODDER_LOGFILE, "w")
+    if file == nil then return end
+    file:write("0")
+    file:close()
+end
+
+-- Auto Update
+if !dev_vers then
+    local response1 = false
+    local updateError = false
+    local updateDone = false
+    local needsUpdate = false
+    async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/version", function(result)
+        if !script_version or result != script_version then
+            needsUpdate = true
+            log("Found new version: "..result, "AUTO UPDATE")
+            local modules = {}
+            for all_modules.script_modules as module do
+                log(scriptdir.."lib/"..module.path.."\nhttps://raw.githubusercontent.com/iP0G/Xcript/main/lib/"..module.path, "d")
+                modules[#modules + 1] = module.path
+            end
+            for all_modules.required_modules as module do
+                log(scriptdir.."lib/"..module.path.."\nhttps://raw.githubusercontent.com/iP0G/Xcript/main/lib/"..module.path, "d")
+                modules[#modules + 1] = module.path
+            end
+            for modules as module do
+                async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/lib/"..module, function(result)
+                    if !result then
+                        log("Unknown error downloading update.", "ERROR")
+                        updateError = true
+                        return
+                    end
+                    local file = io.open(scriptdir.."lib/"..module, "wb")
+                    file:write(result)
+                    file:close()
+                end,
+                function(err)
+                    log("Error getting update for module: "..module.."\nError: "..err, "ERROR")
+                    updateError = true
+                end)
+                async_http.dispatch()
+            end
+            updateDone = true
+        end
+        response1 = true
+    end,
+    function(err)
+        log("Error checking for update: "..err, "ERROR")
+        response1 = true
+    end)
+    async_http.dispatch()
+    while !response1 do wait() end
+    if needsUpdate then
+        while !updateDone do wait() end
+    end
+    if needsUpdate and !updateError then
+        wait(10)
+        log("Update Success! Restarting "..SCRIPT_NAME.."...", "AUTO UPDATE")
+        -- util.restart_script()
+    end
+end
+
+-- Modules
+
+for i, group in all_modules do
+    for group as module do
+        if !filesystem.exists(scriptdir.."lib/"..module.path..".pluto") then
+            local msgt = "Missing required module "..module.name.." in group '"..i.."'. "
+            local mext1 = "Functionality may be limited."
+            local mext2 = "Stopping script."
+            pluto_switch i do
+                case 'dev_modules':
+                    dev_vers = false
+                    break
+                case 'script_modules':
+                    notify(msgt..mext1)
+                    log(msgt..mext1, "WARN")
+                    break
+                case 'required_modules':
+                    notify(msgt..mext2)
+                    log(msgt..mext2, "ERROR")
+                    util.stop_script()
+                    break
+                case 'private_modules':
+                    private_vers = false
+                    break
+            end
+        end
+    end
+end
+
+util.execute_in_os_thread(function()
+    for all_modules.private_modules as module do
+        xpcall(
+            function()
+                local required_mod = require(module.path)
+            end,
+            function(err)
+                private_vers = false
+            end
+        )
+    end
+    if dev_vers then
+        for all_modules.dev_modules as module do
+            xpcall(
+                function()
+                    local required_mod = require(module.path)
+                end,
+                function(err)
+                    log("Error loading developer module: "..module.name, "ERROR")
+                    notify("Error loading developer module: "..module.name)
+                    dev_vers = false
+                end
+            )
+        end
+    end
+    for i, group in all_modules do
+        if i != 'dev_modules' and i != 'private_modules' then
+            for group as module do
+                xpcall(
+                    function()
+                        local required_mod = require(module.path)
+                    end,
+                    function(err)
+                        local txt = "Error loading '"..i.."' module: "..module.name..". | Error: "..err
+                        local txt1 = "Error loading '"..i.."' module: "..module.name..". Functionality may be limited. | Error: "..err
+                        local txt2 = "Stopping script."
+                        pluto_switch i do
+                            case 'dev_modules':
+                                dev_vers = false
+                                break
+                            case 'script_modules':
+                                log(txt1, "WARN")
+                                notify(txt1)
+                                break
+                            case 'required_modules':
+                                log(txt, "ERROR")
+                                notify(txt)
+                                log(txt2, "STOP")
+                                notify(txt2)
+                                util.stop_script()
+                                break
+                            case 'private_modules':
+                                private_vers = false
+                                break
+                        end
+                    end
+                )
+            end
+        end
+    end
+end)
+
+-- Init
+
+player_geo_loc_init()
+
+if private_vers then script_version = "Private "..script_version end
+if dev_vers then script_version = script_version.."-dev" end
+
+players.dispatch_on_join()
+
+util.keep_running()
+
+if SCRIPT_SILENT_START then
+    MISC.FORCE_LIGHTNING_FLASH()
+    MISC.FORCE_LIGHTNING_FLASH()
+else
+    PlaySound(hitmarker_soundfile)
+    draw_hitmarker()
+end
+
+if players.get_host() == players.user() then NETWORK.NETWORK_SESSION_BLOCK_JOIN_REQUESTS(false) end
+
+GetTotalPlayersRemoved()
+initModderLog()
+
+if opt_log_total_players_removed then StartLoggingPlayersRemoved() end
+
+local this_load_time_format = string.format("%.0f", ((os.clock() - this_load_start_time) * 1000))
+log(script_version.." | Loaded in "..this_load_time_format.."ms.", "Ready")
+notify(SCRIPT_NAME.." "..script_version.." | Loaded in "..this_load_time_format.."ms.")
+is_starting = false
+
+-- Shadow Start
+
+creditslist.menu_name = "Xcript "..script_version
+wait(5)
+log("██╗  ██ █████╗ ██████╗ ██╗██████╗ ████████╗")
+wait(5)
+log("░██╳██╝██╔══██╗██╔══██╗██║██╔══██╗╚══██╔══╝")
+wait(5)
+log("░░███╳░██║░░╚═╝██████╔╝██║██████╔╝░░░██║░░░")
+wait(5)
+log("░██╳██╗██║░░██╗██╔══██╗██║██╔═══╝░░░░██║░░░")
+wait(5)
+log("██╗░░██╗█████╔╝██║░░██║██║██║░░░░░░░░██║░░░")
+wait(5)
+log("╚═╝░░╚═╝╚════╝░╚═╝░░╚═╝╚═╝╚═╝░░░░░░░░╚═╝░░░")
+
+if ReadExecStore() then
+    ExecStoreCheck()
+else
+    FirstScriptLoad()
+end
+
+populate_remembered_player_menu()
+
+-- PrivateModule0
+if private_vers then
+    pfunc_2()
+    pfunc_1()
+    pfunc_0()
+end
+
+shadow_starting = false
+
+if dev_vers then log("Finished Initialization", "-- Debug") end
