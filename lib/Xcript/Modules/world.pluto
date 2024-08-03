@@ -1,0 +1,228 @@
+
+-- Root World
+local world = menu.list(menu.my_root(), "World", {"lworld"}, "World Options")
+
+-- Sub Tabs
+-----------------------
+local world_casino_opts = menu.list(world, "Casino", {""}, "The casino is yours!")
+local peds_opts = menu.list(world, "Peds", {""}, "Ped options in the world.")
+local traffic_opts = menu.list(world, "Traffic", {""}, "Traffic options.\n"..default_help)
+local teleports = menu.list(world, "Teleports", {"ltps"}, default_help)
+local clear_area = menu.list(world, "Clear Area", {"lcao"}, "Options for clearing the area around you.")
+
+
+---------------------
+-- Main
+---------------------
+-- World
+
+    -- Close Nearby Businesses
+    menu.attach_before(world_casino_opts, menu.action(menu.shadow_root(), "Out Of Business", {""}, "Put current or nearby shops out of business. Employees will leave and won't lock the store doors/\"close\" the store like normal.", nearbyShopsClose))
+
+    -- Casino
+        menu.action(world_casino_opts, "Close Casino", {""}, "Casino is closed!\n\n*Must be inside casino to work*", function()
+            local names = {"AM_MP_CASINO", "AM_CASINO_PEDS", "Blackjack", "CASINO_SLOTS", "CASINO_LUCKY_WHEEL", "Three_Card_Poker", "casino_bar_seating"}
+            local count = 0
+            if SCRIPT.DOES_SCRIPT_EXIST("AM_MP_CASINO") then
+                for i = 0, 10000 do
+                    local thread = SCRIPT.GET_NAME_OF_SCRIPT_WITH_THIS_ID(i)
+                    if table.contains(names, thread) then
+                        count += 1
+                        log("Found thread "..thread.." with ID "..i, "d")
+                        SCRIPT.TERMINATE_THREAD(i)
+                    end
+                end
+                log("Terminated "..count.." threads.", "dd")
+            else
+                notify("Main casino thread not found.\n(Are you in the casino?)")
+            end
+        end)
+
+        menu.action(world_casino_opts, "Open Casino", {""}, "Casino is open for business!\n\n*Must be inside casino to work*", function()
+            local names = {"AM_MP_CASINO", "AM_CASINO_PEDS", "Blackjack", "CASINO_SLOTS", "CASINO_LUCKY_WHEEL", "Three_Card_Poker", "casino_bar_seating"}
+            local count = 0
+            for names as name do
+                count += 1
+                SCRIPT.REQUEST_SCRIPT(name)
+            end
+            log("Requested "..count.." threads to be started.", "dd")
+        end)
+
+    -- Peds
+
+        allpeds_are_mp_players = false
+        menu.toggle(peds_opts, "All Peds Are Players", {""}, "", function(on)
+            allpeds_are_mp_players = on
+        end)
+
+        menu.toggle(peds_opts, "Everyone vs Everyone", {""}, "Just turn it on.", function(on)
+            MISC.SET_RIOT_MODE_ENABLED(on)
+        end)
+        
+        obliv_peds_opt = menu.toggle(peds_opts, "Oblivious Peds", {""}, "Peds ignore basically everything.", function(on)
+            if on then
+                peds_ignore = true
+            else
+                if soul_swap_opt.value == false then
+                    peds_ignore = false
+                end
+            end
+        end)
+
+        peds_shrink = false
+        menu.toggle(peds_opts, "Peds Shrink", {""}, "", function(on)
+            peds_shrink = on
+        end)
+
+        all_peds_are_player_opt = menu.toggle(peds_opts, "All Peds Are You", {""}, "*You need to turn 'Online>Protections>Block Entity Spam' off for this to work properly.\n\nTurns every ped into you.", function(on)
+            if on then
+                menu.show_warning(all_peds_are_player_opt, CLICK_MENU, "You need to turn 'Online>Protections>Block Entity Spam' off for this to work properly.\n\nIf you have already this turned off you can ignore this.\nThis won't show again if you proceed.", function()
+                    if not NETWORK.NETWORK_HAS_CACHED_PLAYER_HEAD_BLEND_DATA(players.user()) then
+                        NETWORK.NETWORK_CACHE_LOCAL_PLAYER_HEAD_BLEND_DATA()
+                    end
+                    all_peds_are_player = true
+                end, function() all_peds_are_player_opt.value = false end, true)
+            else
+                all_peds_are_player = on
+            end
+        end)
+
+        peds_fight_back = false
+        menu.toggle(peds_opts, "Peds Fight Back", {""}, "", function(on)
+            peds_fight_back = on
+        end)
+
+        peds_highperception = false
+        menu.toggle(peds_opts, "Peds Have High Perception", {""}, "", function(on)
+            peds_highperception = on
+        end)
+
+        peds_are_enemies = false
+        menu.toggle(peds_opts, "All Peds Are Enemies", {""}, "", function(on)
+            peds_are_enemies = on
+        end)
+
+        peds_allcops = false
+        menu.toggle(peds_opts, "All Peds Are Cops", {""}, "", function(on)
+            peds_allcops = on
+        end)
+
+    -- Traffic
+        menu.toggle(traffic_opts, "Traffic Ignores Signals", {""}, "Traffic ignores traffic lights.", function(on)
+            traffic_ignore_signals = on
+        end)
+
+        menu.toggle(traffic_opts, "Traffic Explodes On Any Impact", {""}, "This also makes traffic stop moving.\nEvery Vehicle turns into a mine.", function(on)
+            traffic_exp_oi = on
+        end)
+
+    -- Teleports
+        for index, data in interiors do
+            local location_name = data[1]
+            local location_coords = data[2]
+            menu.action(teleports, location_name, {"tpl"..location_name}, "", function()
+                trigger_commands("doors on; nodeathbarriers on")
+                if not PED.IS_PED_IN_ANY_VEHICLE(players.user_ped(), false) then 
+                    ENTITY.SET_ENTITY_COORDS_NO_OFFSET(players.user_ped(), location_coords.x, location_coords.y, location_coords.z, false, false, false)
+                else
+                    PED.SET_PED_COORDS_KEEP_VEHICLE(players.user_ped(), location_coords.x, location_coords.y, location_coords.z)
+                end
+            end)
+        end
+
+    -- Clear Area
+        -- Clear Area
+            menu.list_action(clear_area, "Clear Area", {""}, "Clears Peds, Vehicles, and Objects.", {"Vehicles", "Peds", "Objects"}, function(index, name)
+                notify("Clearing "..name:lower().."...")
+                local clean_amount = 0
+                if index == 0 then
+                    for entities.get_all_vehicles_as_pointers() as vehicle do
+                        if vehicle != entities.get_user_vehicle_as_pointer(true) and entities.get_owner(vehicle) == players.user() then
+                            entities.delete(vehicle)
+                            clean_amount += 1
+                            wait(50)
+                        end
+                    end
+                elseif index == 2 then
+                    for entities.get_all_peds_as_pointers() as ped do
+                        if not (NETWORK.NETWORK_IS_ACTIVITY_SESSION() and ENTITY.IS_ENTITY_A_MISSION_ENTITY(ped)) and entities.get_owner(ped) == players.user() then
+                            entities.delete(ped)
+                            clean_amount += 1
+                            wait(50)
+                        end
+                    end
+                elseif index == 3 then
+                    for entities.get_all_objects_as_handles() as object do
+                        if entities.get_owner(object) == players.user() then
+                            entities.delete(object)
+                            clean_amount += 1
+                            wait(50)
+                        end
+                    end
+                end
+                notify("Cleared "..tostring(clean_amount).." "..name:lower()..".")
+            end)
+
+        -- Clear All
+            menu.action(clear_area, "Clear All", {"lca"}, "Clears the Area around you without sending Freeze events.", function()
+                local clear_ropes = menu.ref_by_path("World>Inhabitants>Delete All Ropes")
+                local count = 0
+                for entities.get_all_peds_as_pointers() as ped do
+                    if ped != players.user_ped() and entities.get_owner(ped) == players.user() and not NETWORK.NETWORK_IS_ACTIVITY_SESSION() then
+                        entities.delete_by_pointer(ped)
+                        count += 1
+                        wait(10)
+                    end
+                end
+                notify("Deleted "..count.." Peds!")
+                count = 0
+                wait(100)
+                for entities.get_all_vehicles_as_pointers() as vehicle do
+                    if vehicle != entities.get_user_vehicle_as_pointer(true) and entities.get_owner(vehicle) == players.user() then
+                        entities.delete_by_pointer(vehicle)
+                        count += 1
+                        wait(10)
+                    end
+                end
+                notify("Deleted ".. count .." Vehicles!")
+                count = 0
+                wait(100)
+                for entities.get_all_objects_as_handles() as object do
+                    if entities.get_owner(object) == players.user() then
+                        entities.delete(object)
+                        count += 1
+                        wait(10)
+                    end
+                end
+                notify("Deleted "..count.." Objects!")
+                count = 0
+                wait(100)
+                for entities.get_all_pickups_as_pointers() as pickup do
+                    if entities.get_owner(pickup) == players.user() then
+                        entities.delete_by_pointer(pickup)
+                        count += 1
+                        wait(10)
+                    end
+                end
+                notify("Deleted "..count.." Pickups!")
+                wait(100)
+                trigger_command(clear_ropes)
+            end)
+
+    -- Fix Traffic and Peds
+        menu.action(world, "Fix Traffic and Peds Not Spawning", {"lfixtraffic"}, "Attempts to fix Traffic and Peds not spawning.", function()
+            notify("Attempting to fix population multipliers.")
+            local pms = MISC.ADD_POP_MULTIPLIER_SPHERE(1.1, 1.1, 1.1, 15000.0, 1.0, 1.0, false, true)
+            wait(3000)
+            MISC.REMOVE_POP_MULTIPLIER_SPHERE(pms, false)
+            PED.INSTANTLY_FILL_PED_POPULATION()
+            VEHICLE.INSTANTLY_FILL_VEHICLE_POPULATION()
+            while not VEHICLE.HAS_INSTANT_FILL_VEHICLE_POPULATION_FINISHED() do wait() end
+            for i = 0, 4 do MISC.POPULATE_NOW() end
+            notify("Attempted to fix population multipliers.")
+        end)
+
+    -- Populate Area
+        menu.action(world, "Populate Area", {"lpopulate"}, "Spawns a few out-of-sight peds, vehicles, animals, etc. each time it is called.", function()
+            MISC.POPULATE_NOW()
+        end)

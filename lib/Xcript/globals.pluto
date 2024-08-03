@@ -1,0 +1,685 @@
+-- Hi
+
+-- Globals
+script_version = "0.9"
+dev_vers = true
+
+private_vers = false -- Changing this manually does nothing (obviously).
+
+natives_version = "3274a"
+
+is_starting = true
+shadow_starting = true
+is_stopping = false
+
+notify = util.toast
+wait = util.yield
+trigger_commands = menu.trigger_commands
+trigger_command = menu.trigger_command
+sendse = util.trigger_script_event
+joaat = util.joaat
+msg = chat.send_message
+
+scriptdir = filesystem.scripts_dir()
+XcriptDir = scriptdir.."Xcript\\"
+resourcesDir = filesystem.resources_dir().."Xcript\\"
+libDir = scriptdir.."lib/Xcript\\"
+storeDir = filesystem.store_dir().."Xcript\\"
+THIS_SCRIPT_FILE = scriptdir..SCRIPT_FILENAME
+FUNCS_FILE = libDir.."funcs.pluto"
+FUNCTIONS_FILE = libDir.."functions.pluto"
+PREV_EXEC_STORE = storeDir.."Persistent/PREV_EXEC_STORE.txt"
+PERSISTENT_MODDER_LOGFILE = storeDir.."Persistent/PERSISTENT_MODDERS_LOG.txt"
+PERSISTENT_REMOVEDCOUNT_FILE = storeDir.."Persistent/TotalRemoved.txt"
+
+hitmarker_soundfile = resourcesDir.."Hitmarker_SoundEffect.wav"
+hitmarker_lv_soundfile = resourcesDir.."Hitmarker_SoundEffect_lv.wav"
+hitmarker_texture = resourcesDir.."Hitmarker_Texture.png"
+
+all_modules = {
+    dev_modules = {
+        {
+            name = "'Debug'",
+            path = "Xcript/Modules/debug"
+        },
+    },
+
+    private_modules = {
+        {
+            name = "'Private0'",
+            path = "XcriptPrivate/Modules/p0"
+        },
+        {
+            name = "'Private1'",
+            path = "XcriptPrivate/Modules/p1"
+        },
+        {
+            name = "'Private2'",
+            path = "XcriptPrivate/Modules/p2"
+        },
+        {
+            name = "'Private3'",
+            path = "XcriptPrivate/Modules/p3"
+        },
+        {
+            name = "'Private4'",
+            path = "XcriptPrivate/Modules/p4"
+        },
+    },
+
+    script_modules = {
+        {
+            name = "'Self'",
+            path = "Xcript/Modules/self"
+        },
+        {
+            name = "'Vehicle'",
+            path = "Xcript/Modules/vehicle"
+        },
+        {
+            name = "'Online'",
+            path = "Xcript/Modules/online"
+        },
+        {
+            name = "'World'",
+            path = "Xcript/Modules/world"
+        },
+        {
+            name = "'Game'",
+            path = "Xcript/Modules/game"
+        },
+        {
+            name = "'Misc'",
+            path = "Xcript/Modules/misc"
+        },
+        {
+            name = "'Credits'",
+            path = "Xcript/Modules/credits"
+        },
+        {
+            name = "'Players'",
+            path = "Xcript/Modules/players"
+        },
+    },
+
+    required_modules = {
+        {
+            name = "'Events'",
+            path = "Xcript/Modules/events"
+        },
+    },
+}
+
+PLAYER_USERNAME = players.get_name(players.user())
+
+PERSISTENT_MODDER_LOG = {}
+PERSISTENT_MODDER_CLASSIFICATION = "Persistent Modder"
+PERSISTENT_MODDER_LOG_READY = false
+
+GEOLOC_LAT_MILES = 0
+GEOLOC_LON_MILES = 0
+GEOLOCAPI_OK = false
+
+DETECT_XCRIPT = true
+XUID_ON = true
+XCRIPT_DEV_RID = 193127833
+
+draw_hit_marker = false
+
+players_last_veh = {}
+player_cur_car = 0
+
+handle_ptr = memory.alloc(13*8)
+
+Jointimes = {}
+names = {}
+rids = {}
+hostq = {}
+allplayers = {}
+ips = {}
+IS_NEW_SESSION = false
+
+EXEC_STORE_DATA = {}
+
+default_help = "Pretty self explanatory."
+
+rememberkicked = false
+
+purge_v_y = 0
+purge_v_n = 0
+purge_v = {}
+
+player_kills_log = {}
+
+vfp_based = {}
+vfp_retard = {}
+
+peds_ignore = false
+all_peds_are_player = false
+traffic_ignore_signals = false
+traffic_exp_oi = false
+
+kick_if_player_speaks = {}
+kick_if_player_speaks_queue = {}
+
+opt_should_log_new_session = true
+opt_host_kick_type = 1
+opt_hitmarker_on_kick = true
+opt_taunt_before_kick_if_host = false
+opt_arrowright_to_add_lmc = true
+opt_log_total_players_removed = true
+opt_never_kick_friends = true
+
+dhm_queue = 0
+
+include_f_d_reacts = false
+include_f_d_notifs = false
+
+players_removed_queue_id = {}
+players_removed_queue_name = {}
+players_removed_since_start = 0
+players_removed_total = 0
+players_removed_this_session = 0
+
+bj_spoofed_token_isnt_standuser_or_already_blocked = {}
+
+-- Info Overlay
+
+--client resolution/aspect ratio
+RES_X, RES_Y = 1920, 1080
+ASPECT_RATIO = RES_X/RES_Y
+
+--set position
+-- gui_x = 0
+-- gui_y = 0
+gui_x = 5/RES_X
+gui_y = 5/RES_Y
+
+--set colours
+colour =
+{
+    title_bar = {r = 0, g = 0, b = 0, a = 1},
+    background = {r = 0, g = 0, b = 0, a = 77/255},
+    health_bar = {r = 114/255, g = 204/255, b = 114/255, a = 150/255},
+    armour_bar = {r = 70/255, g = 136/255, b = 171/255, a = 150/255},
+    map = {r = 1, g = 1, b = 1, a = 0.75},
+    blip = {r = 1, g = 1, b = 1, a = 1},
+    name = {r = 1, g = 1, b = 1, a = 1},
+    label = {r = 1, g = 1, b = 1, a = 1},
+    info = {r = 1, g = 1, b = 1, a = 1},
+    border = {r = 0, g = 0, b = 0, a = 1}
+}
+
+--settings element sizing & spacing
+name_h = 24/RES_Y
+padding = 8/RES_Y
+spacing = 3/RES_Y
+gui_w = 290/RES_X
+bar_w_mult = 1.8
+blip_size = 0.0035
+
+--settings text sizing & spacing
+name_size = 0.52
+text_size = 0.41
+line_spacing = 10/RES_Y
+
+--settings border
+border_width = 1/RES_Y
+
+--settings blur
+blur_strength = 1
+blur_strength_def = 1
+blur = {}
+for i = 1, 8 do blur[i] = directx.blurrect_new() end
+
+--map textures
+textures =
+{
+    map = directx.create_texture(resourcesDir.."Map.png"),
+    blip = directx.create_texture(resourcesDir.."Blip.png")
+}
+
+-- Constant Tables
+
+anti_explo_sniper = {"Remove Weapon", "Remove Component", "Notify", "Kill", "Kick"}
+
+interior_stuff = {0, 233985, 169473, 169729, 169985, 170241, 177665, 177409, 185089, 184833, 184577, 163585, 167425, 167169}
+
+better_heli_offsets = {0x18, 0x20, 0x24, 0x30, 0x48, 0x4C, 0x58, 0x3C}
+
+better_planes = {
+    {0x00B0, 10},
+    {0x0050, 0.3},
+    {0x0054, 1}
+}
+
+game_ui_components = {
+    "Wanted Stars",
+    "Weapon Ammo",
+    "Cash",
+    "MP Cash",
+    "MP Message",
+    "Vehicle Name",
+    "Area Name",
+    "Vehicle Class",
+    "Street Name",
+    "Help Text",
+    "Floating Help 1",
+    "Floating Help 2",
+    "Cash Change",
+    "Reticle",
+    "Subtitles",
+    "Radio Stations",
+    "Saving Game",
+    "Game Stream",
+    "Weapon Wheel",
+    "Weapon Wheel Stats",
+    "MAX_HUD_COMPONENTS",
+    "MAX_HUD_WEAPONS",
+}
+
+ped_damage_packs = {
+    "BigHitByVehicle",
+    "BigRunOverByVehicle",
+    "Burnt_Ped_0",
+    "Burnt_Ped_Head_Torso",
+    "Burnt_Ped_Left_Arm",
+    "Burnt_Ped_Left_Leg",
+    "Burnt_Ped_Limbs",
+    "Burnt_Ped_Right_Arm",
+    "Burnt_Ped_Right_Leg",
+    "Car_Crash_Heavy",
+    "Car_Crash_Light",
+    "Dirt_Dry",
+    "Dirt_Grass",
+    "Dirt_Mud",
+    "Explosion",
+    "Explosion_Large",
+    "Explosion_Med",
+    "Fall",
+    "Fall_Low",
+    "HitByVehicle",
+    "HOSPITAL_0",
+    "HOSPITAL_1",
+    "HOSPITAL_2",
+    "HOSPITAL_3",
+    "HOSPITAL_4",
+    "HOSPITAL_5",
+    "HOSPITAL_6",
+    "HOSPITAL_7",
+    "HOSPITAL_8",
+    "HOSPITAL_9",
+    "MTD_melee_face_jaw",
+    "MTD_melee_face_r",
+    "None",
+    "RunOverByVehicle",
+    "SCR_Cougar",
+    "SCR_DogAttack",
+    "SCR_Dumpster",
+    "SCR_Finale_Michael",
+    "SCR_Finale_Michael_Face",
+    "SCR_Franklin_finb",
+    "SCR_Franklin_finb2",
+    "SCR_Shark",
+    "SCR_Torture",
+    "SCR_TracySplash",
+    "SCR_TrevorTreeBang",
+    "Skin_Melee_0",
+    "Splashback_Face_0",
+    "Splashback_Face_1",
+    "Splashback_Torso_0",
+    "Splashback_Torso_1",
+    "TD_KNIFE_FRONT",
+    "TD_KNIFE_FRONT_VA",
+    "TD_KNIFE_FRONT_VB",
+    "TD_KNIFE_REAR",
+    "TD_KNIFE_REAR_VA",
+    "TD_KNIFE_REAR_VB",
+    "TD_KNIFE_STEALTH",
+    "TD_MELEE_BATWAIST",
+    "TD_melee_face_l",
+    "TD_MELEE_FRONT",
+    "TD_MELEE_REAR",
+    "TD_MELEE_STEALTH",
+    "TD_PISTOL_FRONT",
+    "TD_PISTOL_FRONT_KILL",
+    "TD_PISTOL_REAR",
+    "TD_PISTOL_REAR_KILL",
+    "TD_RIFLE_FRONT_KILL",
+    "TD_RIFLE_NONLETHAL_FRONT",
+    "TD_RIFLE_NONLETHAL_REAR",
+    "TD_SHOTGUN_FRONT_KILL",
+    "TD_SHOTGUN_REAR_KILL",
+    "Useful_Bits"
+}
+
+veh_things = {
+    "brickade2",
+    "hauler",
+    "hauler2",
+    "manchez3",
+    "terbyte",
+    "minitank",
+    "rcbandito",
+    "volatus",
+    "supervolito",
+    "supervolito2"
+}
+
+numpadControls = {
+    -- Plane & Heli
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    117,
+    118,
+    -- Submarine
+    123,
+    124,
+    125,
+    126,
+    127,
+    128,
+}
+
+explosion_types = {
+    "GRENADE",
+	"GRENADELAUNCHER",
+	"STICKYBOMB",
+	"MOLOTOV",
+	"ROCKET",
+	"TANKSHELL",
+	"HI_OCTANE",
+	"CAR",
+	"PLANE",
+	"PETROL_PUMP",
+	"BIKE",
+	"DIR_STEAM",
+	"DIR_FLAME",
+	"DIR_WATER_HYDRANT",
+	"DIR_GAS_CANISTER",
+	"BOAT",
+	"SHIP_DESTROY",
+	"TRUCK",
+	"BULLET",
+	"SMOKEGRENADELAUNCHER",
+	"SMOKEGRENADE",
+	"BZGAS",
+	"FLARE",
+	"GAS_CANISTER",
+	"EXTINGUISHER",
+	"PROGRAMMABLEAR",
+	"TRAIN",
+	"BARREL",
+	"PROPANE",
+	"BLIMP",
+	"DIR_FLAME_EXPLODE",
+	"TANKER",
+	"PLANE_ROCKET",
+	"VEHICLE_BULLET",
+	"GAS_TANK",
+	"BIRD_CRAP",
+	"RAILGUN",
+	"BLIMP2",
+	"FIREWORK",
+	"SNOWBALL",
+	"PROXMINE",
+	"VALKYRIE_CANNON",
+	"AIR_DEFENCE",
+	"PIPEBOMB",
+	"VEHICLEMINE",
+	"EXPLOSIVEAMMO",
+	"APCSHELL",
+	"BOMB_CLUSTER",
+	"BOMB_GAS",
+	"BOMB_INCENDIARY",
+	"BOMB_STANDARD",
+	"TORPEDO",
+	"TORPEDO_UNDERWATER",
+	"BOMBUSHKA_CANNON",
+	"BOMB_CLUSTER_SECONDARY",
+	"HUNTER_BARRAGE",
+	"HUNTER_CANNON",
+	"ROGUE_CANNON",
+	"MINE_UNDERWATER",
+	"ORBITAL_CANNON",
+	"BOMB_STANDARD_WIDE",
+	"EXPLOSIVEAMMO_SHOTGUN",
+	"OPPRESSOR2_CANNON",
+	"MORTAR_KINETIC",
+	"VEHICLEMINE_KINETIC",
+	"VEHICLEMINE_EMP",
+	"VEHICLEMINE_SPIKE",
+	"VEHICLEMINE_SLICK",
+	"VEHICLEMINE_TAR",
+	"SCRIPT_DRONE",
+	"RAYGUN",
+	"BURIEDMINE",
+	"SCRIPT_MISSILE",
+	"RCTANK_ROCKET",
+	"BOMB_WATER",
+	"BOMB_WATER_SECONDARY",
+	"0xF728C4A9",
+	"0xBAEC056F",
+	"FLASHGRENADE",
+	"STUNGRENADE",
+	"0x763D3B3B",
+	"SCRIPT_MISSILE_LARGE",
+	"SUBMARINE_BIG",
+	"EMPLAUNCHER_EMP"
+}
+
+interiors = {
+    {"AFK Room", {x=-158.71494, y=-982.75885, z=149.13135}},
+    {"Torture Room", {x=147.170, y=-2201.804, z=4.688}},
+    {"Mining Tunnels", {x=-595.48505, y=2086.4502, z=131.38136}},
+    {"Omegas Garage", {x=2330.2573, y=2572.3005, z=46.679367}},
+    {"50 Car Garage", {x=520.0, y=-2625.0, z=-50.0}},
+    {"Server Farm", {x=2474.0847, y=-332.58887, z=92.9927}},
+    {"Character Creation", {x=402.91586, y=-998.5701, z=-99.004074}},
+    {"Life Invader Building", {x=-1082.8595, y=-254.774, z=37.763317}},
+    {"Mission End Garage", {x=405.9228, y=-954.1149, z=-99.6627}},
+    {"Destroyed Hospital", {x=304.03894, y=-590.3037, z=43.291893}},
+    {"Stadium", {x=-256.92334, y=-2024.9717, z=30.145584}},
+    {"Comedy Club", {x=-430.00974, y=261.3437, z=83.00648}},
+    {"Record A Studios", {x=-1010.6883, y=-49.127754, z=-99.40313}},
+    {"Bahama Mamas Nightclub", {x=-1394.8816, y=-599.7526, z=30.319544}},
+    {"Janitors House", {x=-110.20285, y=-8.6156025, z=70.51957}},
+    {"Therapists House", {x=-1913.8342, y=-574.5799, z=11.435149}},
+    {"Martin Madrazos House", {x=1395.2512, y=1141.6833, z=114.63437}},
+    {"Floyds Apartment", {x=-1156.5099, y=-1519.0894, z=10.632717}},
+    {"Michaels House", {x=-813.8814, y=179.07889, z=72.15914}},
+    {"Franklins House (Strawberry)", {x=-14.239959, y=-1439.6913, z=31.101551}},
+    {"Franklins House (Vinewood Hills)", {x=7.3125067, y=537.3615, z=176.02803}},
+    {"Trevors House", {x=1974.1617, y=3819.032, z=33.436287}},
+    {"Lesters House", {x=1273.898, y=-1719.304, z=54.771}},
+    {"Lesters Warehouse", {x=713.5684, y=-963.64795, z=30.39534}},
+    {"Lesters Office", {x=707.2138, y=-965.5549, z=30.412853}},
+    {"Meth Lab", {x=1391.773, y=3608.716, z=38.942}},
+    {"Acid Lab", {x=484.69, y=-2625.36, z=-49.0}},
+    {"Morgue Lab", {x=495.0, y=-2560.0, z=-50.0}},
+    {"Humane Labs", {x=3625.743, y=3743.653, z=28.69009}},
+    {"Motel Room", {x=152.2605, y=-1004.471, z=-99.024}},
+    {"Police Station", {x=443.4068, y=-983.256, z=30.689589}},
+    {"Bank Vault", {x=263.39627, y=214.39891, z=101.68336}},
+    {"Blaine County Bank", {x=-109.77874, y=6464.8945, z=31.626724}},
+    {"Tequi-La-La Bar", {x=-564.4645, y=275.5777, z=83.074585}},
+    {"Scrapyard Body Shop", {x=485.46396, y=-1315.0614, z=29.2141}},
+    {"The Lost MC Clubhouse", {x=980.8098, y=-101.96038, z=74.84504}},
+    {"Vangelico Jewlery Store", {x=-629.9367, y=-236.41296, z=38.057056}},
+    {"Airport Lounge", {x=-913.8656, y=-2527.106, z=36.331566}},
+    {"Morgue", {x=240.94368, y=-1379.0645, z=33.74177}},
+    {"Union Depository", {x=1.298771, y=-700.96967, z=16.131021}},
+    {"Fort Zancudo Tower", {x=-2357.9187, y=3249.689, z=101.45073}},
+    {"Agency Interior", {x=-1118.0181, y=-77.93254, z=-98.99977}},
+    {"Agency Garage", {x=-1071.0494, y=-71.898506, z=-94.59982}},
+    {"Terrobyte Interior", {x=-1421.015, y=-3012.587, z=-80.000}},
+    {"Bunker Interior", {x=899.5518,y=-3246.038, z=-98.04907}},
+    {"IAA Office", {x=128.20, y=-617.39, z=206.04}},
+    {"FIB Top Floor", {x=135.94359, y=-749.4102, z=258.152}},
+    {"FIB Floor 47", {x=134.5835, y=-766.486, z=234.152}},
+    {"FIB Floor 49", {x=134.635, y=-765.831, z=242.152}},
+    {"Big Fat White Cock", {x=-31.007448, y=6317.047, z=40.04039}},
+    {"Strip Club DJ Booth", {x=121.398254, y=-1281.0024, z=29.480522}},
+    {"Single Garage", {x=-144.11609, y=-576.5855, z=31.845743}},
+    {"FIB Destroyed Floor", {x=158.44386, y=-738.07367, z=246.15218}},
+    {"Pharma Lab", {x=496.86224, y=-2560.0608, z=-58.921993}},
+    {"Nightclub Safe", {x=-1615.6887, y=-3015.7354, z=-75.205086}},
+}
+
+attackers = {
+    cnames = {
+        "Clown",
+        "Mexican",
+        "Zombie",
+        "Swat Officer",
+        "Juggernaut",
+        "Astronaut",
+        "Bigfoot",
+        "Alien",
+        "Space Monkey",
+        "Impotent Rage",
+        "Lester",
+    },
+    mdl = {
+        "s_m_y_clown_01",
+        "u_m_y_mani",
+        "u_m_y_zombie_01",
+        "s_m_y_swat_01",
+        "u_m_y_juggernaut_01",
+        "s_m_m_movspace_01",
+        "ig_orleans",
+        "s_m_m_movalien_01",
+        "u_m_y_pogo_01",
+        "u_m_y_imporage",
+        "ig_lestercrest"
+    }
+}
+
+ped_bone_ids = {
+    0x0,
+    0x2e28,
+    0xe39f,
+    0xf9bb,
+    0x3779,
+    0x83c,
+    0xfedd,
+    0xe175,
+    0xb3fe,
+    0xca72,
+    0x9000,
+    0xcc4d,
+    0x512d,
+    0x8aae,
+    0x60e6,
+    0x3fcf,
+    0x5c57,
+    0x192a,
+    0xe0fd,
+    0x5c01,
+    0x60f0,
+    0x60f1,
+    0x60f2,
+    0xfcd9,
+    0xb1c5,
+    0xeeeb,
+    0x49d9,
+    0x67f2,
+    0xff9,
+    0xffa,
+    0x67f3,
+    0x1049,
+    0x104a,
+    0x67f4,
+    0x1059,
+    0x105a,
+    0x67f5,
+    0x1029,
+    0x102a,
+    0x67f6,
+    0x1039,
+    0x103a,
+    0xeb95,
+    0x8cbd,
+    0xee4f,
+    0x1470,
+    0x58b7,
+    0x29d2,
+    0x9d4d,
+    0x6e5c,
+    0xdead,
+    0xe5f2,
+    0xfa10,
+    0xfa11,
+    0xe5f3,
+    0xfa60,
+    0xfa61,
+    0xe5f4,
+    0xfa70,
+    0xfa71,
+    0xe5f5,
+    0xfa40,
+    0xfa41,
+    0xe5f6,
+    0xfa50,
+    0xfa51,
+    0x6f06,
+    0x188e,
+    0xab22,
+    0x90ff,
+    0xbb0,
+    0x9995,
+    0x796e, -- SKEL_Head
+    0x322c,
+    0xfe2c,
+    0xe3db,
+    0xb2b6,
+    0x62ac,
+    0x542e,
+    0x74ac,
+    0xaa10,
+    0x6b52,
+    0x4b88,
+    0x54c,
+    0x2ba6,
+    0x9149,
+    0x4ed2,
+    0xf18f,
+    0x4f37,
+    0x4537,
+    0xb4a0,
+    0x4324,
+    0x508f,
+    0xb93b,
+    0xc33b,
+    0xb987,
+    0x8b93,
+    0xdd1c
+}
+
+all_sex_voicenames = {
+    "S_F_Y_HOOKER_01_WHITE_FULL_01",
+    "S_F_Y_HOOKER_01_WHITE_FULL_02",
+    "S_F_Y_HOOKER_01_WHITE_FULL_03",
+    "S_F_Y_HOOKER_02_WHITE_FULL_01",
+    "S_F_Y_HOOKER_02_WHITE_FULL_02",
+    "S_F_Y_HOOKER_02_WHITE_FULL_03",
+    "S_F_Y_HOOKER_03_BLACK_FULL_01",
+    "S_F_Y_HOOKER_03_BLACK_FULL_03"
+}
+
+_XcriptUser = {
+    351,
+    403,
+    439,
+    440,
+}
+
+whitelist_list = {
+    XCRIPT_DEV_RID,
+}
+
+blacklist_list = {}

@@ -1,0 +1,298 @@
+
+-- Root Debug
+local debug_menu = menu.list(menu.my_root(), "Debug", {""}, ":)")
+
+---------------------
+-- Main
+---------------------
+-- Debug
+
+-- Check All
+debug_menu:action("All Ped Config Flag", {"lapcf"}, "", function(click_type)
+    menu.show_command_box("lapcf ")
+end, function(str)
+    if str == "" or str == nil then return end
+    str = tonumber(str)
+    if str < 1 or str > 458 then
+        notify("Invalid Flag.\nMust be between 1 and 458.")
+        return
+    end
+    for players.list() as pid do
+        local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+        local flag = PED.GET_PED_CONFIG_FLAG(ped, str)
+        local name = players.get_name(pid)
+        log("Player: "..name, str.." / "..flag)
+    end
+end, "")
+
+-- Options to change and get ped flags
+menu.action(debug_menu, "Toggle Ped Config Flag", {"lspcf"}, "", function(click_type)
+    menu.show_command_box("lspcf ")
+end, function(str)
+    if str == "" or str == nil then return end
+    str = tonumber(str)
+    if str < 1 or str > 458 then
+        notify("Invalid Flag.\nMust be between 1 and 458.")
+        return
+    end
+    local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(players.user())
+    setPedCFlag(ped, str)
+end, "")
+
+-- Get Ped Config Flag
+menu.action(debug_menu, "Get Ped Config Flag", {"lpcf"}, "", function(click_type)
+    menu.show_command_box("lpcf ")
+end, function(str)
+    if str == "" or str == nil then return end
+    str = tonumber(str)
+    if str < 1 or str > 458 then
+        notify("Invalid Flag.\nMust be between 1 and 458.")
+        return
+    end
+    local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(players.user())
+    local flag = PED.GET_PED_CONFIG_FLAG(ped, str)
+    notify("Player flag "..str.." is: "..flag)
+    log("Player flag "..str.." is: "..flag, "dd")
+end, "")
+
+-- menu.action(debug_menu, "", {""}, "", function()
+-- end)
+
+-- menu.action(debug_menu, "Hud Text", {""}, "", function()
+--     HUD.SET_TEXT_COLOUR(0, 255, 255, 100)
+-- end)
+
+-- local debug_player_control = true
+-- menu.action(debug_menu, "Player Control", {"ldpcontrol"}, "", function(click_type)
+--     menu.show_command_box("ldpcontrol ")
+-- end, function(txt)
+--     if txt == "" then return end
+--     debug_player_control = !debug_player_control
+--     PLAYER.SET_PLAYER_CONTROL(players.user(), debug_player_control, 1 << tonumber(txt))
+--     log("Set player control "..txt.." to "..debug_player_control, "dd")
+-- end)
+
+menu.action(debug_menu, "Reverse Joaat", {"lrjoaat"}, "", function(click_type)
+    menu.show_command_box("lrjoaat ")
+end, function(txt)
+    local hash_str = util.reverse_joaat(txt)
+    log(hash_str, "R-JOAAT")
+end)
+
+menu.action(debug_menu, "Terminate Thread", {"ltermthr"}, "", function(click_type)
+    menu.show_command_box("ltermthr ")
+end, function(name)
+    if name == nil or name == "" then return end
+    for i = 0, 10000 do
+        local thread = SCRIPT.GET_NAME_OF_SCRIPT_WITH_THIS_ID(i)
+        if thread == name then
+            log("Terminating thread "..thread.." with ID "..i.."..", "dd")
+            SCRIPT.TERMINATE_THREAD(i)
+        end
+    end
+end)
+
+menu.action(debug_menu, "Get Threads New", {""}, "", function()
+    local count = 0
+
+    SCRIPT.SCRIPT_THREAD_ITERATOR_RESET()
+    local id = SCRIPT.SCRIPT_THREAD_ITERATOR_GET_NEXT_THREAD_ID()
+    while id != 0 do
+        count += 1
+        log(id.." | "..SCRIPT.GET_NAME_OF_SCRIPT_WITH_THIS_ID(id), "dd")
+        id = SCRIPT.SCRIPT_THREAD_ITERATOR_GET_NEXT_THREAD_ID()
+    end
+    log("Found "..count.." threads.", "dd")
+end)
+
+local prev_threads_debug = {}
+menu.action(debug_menu, "Log Active Threads", {""}, "", function()
+    local count = 0
+    local newthr = ""
+    local remthr = ""
+    local cur_threads_debug = {}
+
+    for i = 0, 10000 do
+        local thread = SCRIPT.GET_NAME_OF_SCRIPT_WITH_THIS_ID(i)
+        if thread != "" then
+            cur_threads_debug[#cur_threads_debug + 1] = thread
+            log(i.." | "..thread, "d")
+            count += 1
+        end
+    end
+    log("Found "..count.." threads.", "dd")
+    if #prev_threads_debug == 0 then
+        log("No previous data to compare..", "dd")
+        goto first
+    end
+
+    for prev_threads_debug as thr do
+        if !table.contains(cur_threads_debug, thr) then
+            if remthr != "" then
+                remthr = remthr..", "..thr
+            else
+                remthr = thr
+            end
+        end
+    end
+    for cur_threads_debug as thr do
+        if !table.contains(prev_threads_debug, thr) then
+            if newthr != "" then
+                newthr = newthr..", "..thr
+            else
+                newthr = thr
+            end
+        end
+    end
+
+    log("New Threads:\n"..newthr, "dd")
+    log("Removed Threads:\n"..remthr, "dd")
+
+    ::first::
+    prev_threads_debug = {}
+    for cur_threads_debug as thr do
+        prev_threads_debug[#prev_threads_debug + 1] = thr
+    end
+end)
+
+-- menu.action(debug_menu, "Log am_ / _shop Threads", {""}, "", function()
+--     local count = 0
+--     local ignoreThreads = {"am_Heist_Int", "am_npc_invites"}
+
+--     for i = 0, 10000 do
+--         local thread = SCRIPT.GET_NAME_OF_SCRIPT_WITH_THIS_ID(i)
+--         if thread != "" then
+--             if string.sub(thread, 1, 3) == "am_" or string.find(thread, "_shop") != nil then
+--                 for ignoreThreads as thr do
+--                     if thread == thr then goto continue end
+--                 end
+--                 log(i.." | "..thread, "d")
+--                 count += 1
+--             end
+--         end
+--         ::continue::
+--     end
+--     log("Found "..count.." threads.", "dd")
+-- end)
+
+menu.action(debug_menu, "Compare G Funcs", {""}, "", function()
+    local removed = {}
+    local added = {}
+    local odata = {}
+    local cdata = {}
+    local oname = XcriptDir .. "Gfuncs.txt"
+    local cname = XcriptDir .. "Gfuncs-Copy.txt"
+    local oFile = io.open(oname, "r")
+    for c in oFile:lines() do
+        if c != nil and c != "" then
+            if string.find(c, "_G.") == nil then
+                odata[#odata + 1] = c
+            end
+        end
+    end
+    oFile:close()
+    local cFile = io.open(cname, "r")
+    for c in cFile:lines() do
+        if c != nil and c != "" then
+            if string.find(c, "_G.") == nil then
+                cdata[#cdata + 1] = c
+            end
+        end
+    end
+    cFile:close()
+
+    for cdata as item do
+        if !table.contains(odata, item) then
+            removed[#removed + 1] = item
+        end
+    end
+    for odata as item do
+        if !table.contains(cdata, item) then
+            added[#added + 1] = item
+        end
+    end
+
+    local raFile = io.open(XcriptDir .. "Gfuncs-Added.txt", "w")
+    for added as line do
+        raFile:write(line, "\n")
+    end
+    raFile.close()
+    local rrFile = io.open(XcriptDir .. "Gfuncs-Removed.txt", "w")
+    for removed as line do
+        rrFile:write(line, "\n")
+    end
+    rrFile.close()
+
+    log("Added: "..#added.." | Removed: "..#removed, "dd")
+end)
+
+menu.action(debug_menu, "Copy G Funcs File", {""}, "", function()
+    local data = {}
+    local ofname = XcriptDir .. "Gfuncs.txt"
+    local cfname = XcriptDir .. "Gfuncs-Copy.txt"
+    local oFile = io.open(ofname, "r")
+    for c in oFile:lines() do
+        if c != nil and c != "" then
+            data[#data + 1] = c
+        end
+    end
+    oFile:close()
+    wait()
+    local cFile = io.open(cfname, "w")
+    for data as line do
+        cFile:write(line, "\n")
+    end
+    cFile:close()
+    log("Saved copy of "..ofname.." to "..cfname, "dd")
+end)
+
+menu.action(debug_menu, "Global Funcs to File", {""}, "", function()
+    local str = ""
+    for apiname, api in _G do
+        if type(api) == "table" then
+            if api != nil and apiname != nil then
+                for funcname, func in ipairs(api) do
+                    str = str.."\n"..apiname.."."..funcname
+                end
+            end
+        end
+    end
+    local fname = XcriptDir .. "Gfuncs.txt"
+    local file = io.open(fname, "w")
+    file:write(str)
+    file:close()
+    log("Saved funcs to file.", "Debug")
+end)
+
+menu.action(debug_menu, "API Funcs to File", {""}, "", function()
+    local str = ""
+    local apinames = {"menu", "players", "entities", "chat", "directx", "util", "v3", "lang", "filesystem", "async_http", "memory", "profiling"}
+    for apiname, api in _G do
+        if type(api) == "table" then
+            for apinames as aname do
+                if aname == apiname then
+                    for funcname, func in api do
+                        str = str.."\n"..apiname.."."..funcname
+                    end
+                end
+            end
+        end
+    end
+    local fname = XcriptDir .. "APIfuncs.txt"
+    local file = io.open(fname, "w")
+    file:write(str)
+    file:close()
+    log("Saved funcs to file.", "Debug")
+end)
+
+-- menu.toggle(debug_menu, "Disable Death Jingle", {""}, "", function(on)
+--     AUDIO.BLOCK_DEATH_JINGLE(on)
+-- end)
+
+menu.action(debug_menu, "Lightning Strike", {""}, "", function()
+    MISC.FORCE_LIGHTNING_FLASH()
+end)
+
+menu.action(debug_menu, "Version Check", {""}, "", function()
+    log("Menu: "..menu.get_version()["version"]..", Game: "..menu.get_version()["game"], "dd")
+end)

@@ -1,0 +1,1572 @@
+
+-- All Players Root
+all_players_list = menu.attach_before(menu.ref_by_path("Players>All Players>Excludes"), menu.list(menu.shadow_root(), SCRIPT_NAME, {}, ""))
+
+---------------------
+-- Main
+---------------------
+-- Player Current Activities
+ap_activity_list = menu.list(all_players_list, "Log Current Activity", {""}, "")
+
+    -- Interior Times
+    menu.action(ap_activity_list, "Interior Times", {""}, "", function()
+        local plyrs = ""
+        local c = 0
+        while PLAYERS_INTERIOR_LISTGEN_LOCK do wait() end
+        for pid, start in PLAYERS_INTERIOR_TIMES do
+            plyrs = plyrs..players.get_name(pid).." ("..string.format("%.0f", ((os.clock() * 1000) - start) / 1000).."s), "
+            c += 1
+        end
+        log("Times: "..string.sub(plyrs, 1, string.len(plyrs) - 2), "Activity ("..c..")")
+    end)
+
+    -- Moving
+    menu.action(ap_activity_list, "Log Moving", {""}, "", function()
+        local plyrs = ""
+        local c = 0
+        for players.list() as pid do
+            local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+            if PED.IS_PED_IN_ANY_VEHICLE(ped, false) then
+                if !VEHICLE.IS_VEHICLE_STOPPED(players_last_veh[pid]) then
+                    plyrs = plyrs..players.get_name(pid)..", "
+                    c += 1
+                end
+            else
+                if !PED.IS_PED_STOPPED(ped) then
+                    plyrs = plyrs..players.get_name(pid)..", "
+                    c += 1
+                end
+            end
+        end
+        log("Moving: "..string.sub(plyrs, 1, string.len(plyrs) - 2), "Activity ("..c..")")
+    end)
+
+    -- Stationary
+    menu.action(ap_activity_list, "Log Stationary", {""}, "", function()
+        local plyrs = ""
+        local c = 0
+        for players.list() as pid do
+            local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+            if PED.IS_PED_IN_ANY_VEHICLE(ped, false) then
+                if VEHICLE.IS_VEHICLE_STOPPED(players_last_veh[pid]) then
+                    plyrs = plyrs..players.get_name(pid)..", "
+                    c += 1
+                end
+            else
+                if PED.IS_PED_STOPPED(ped) then
+                    plyrs = plyrs..players.get_name(pid)..", "
+                    c += 1
+                end
+            end
+        end
+        log("Stationary: "..string.sub(plyrs, 1, string.len(plyrs) - 2), "Activity ("..c..")")
+    end)
+
+    -- Brandishing Any
+    menu.action(ap_activity_list, "Bransishing Any", {""}, "Brandishing Any Weapon", function()
+        local plyrs = ""
+        local c = 0
+        for players.list() as pid do
+            if WEAPON.IS_PED_ARMED(PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid), 7) then
+                plyrs = plyrs..players.get_name(pid)..", "
+                c += 1
+            end
+        end
+        log("Brandishing Weapon: "..string.sub(plyrs, 1, string.len(plyrs) - 2), "Activity ("..c..")")
+    end)
+
+    -- Brandishing Exlosive
+    menu.action(ap_activity_list, "Bransishing Explosive", {""}, "Brandishing Explosive", function()
+        local plyrs = ""
+        local c = 0
+        for players.list() as pid do
+            if WEAPON.IS_PED_ARMED(PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid), 2) then
+                plyrs = plyrs..players.get_name(pid)..", "
+                c += 1
+            end
+        end
+        log("Brandishing Explosive: "..string.sub(plyrs, 1, string.len(plyrs) - 2), "Activity ("..c..")")
+    end)
+
+    -- Has Wanted Level
+    menu.action(ap_activity_list, "Is Wanted", {""}, "Any player that has a wanted level", function()
+        local plyrs = ""
+        local c = 0
+        for players.list() as pid do
+            local lvl = PLAYER.GET_PLAYER_WANTED_LEVEL(pid)
+            if lvl > 0 then
+                plyrs = plyrs..players.get_name(pid).." ("..lvl.."), "
+                c += 1
+            end
+        end
+        log("Is Wanted: "..string.sub(plyrs, 1, string.len(plyrs) - 2), "Activity ("..c..")")
+    end)
+
+-- Punishments
+ap_list_punishments = menu.list(all_players_list, "Kick Punishments", {""}, "")
+
+    -- One Life Left
+    ap_one_life_left = menu.toggle_loop(ap_list_punishments, "1 Life Left", {""}, "(Not including friends)", function()
+        if !readyInSession() then ap_one_life_left.value = false end
+        for players.list(false, false, true) as pid do
+            if PLAYER.IS_PLAYER_DEAD(pid) then
+                kick(pid, 2, "0 Lives Left (All)")
+            end
+        end
+    end)
+
+-- Removals
+ap_list_removals = menu.list(all_players_list, "Removals", {""}, "")
+
+    -- Kick All But Host
+    ap_list_removals:action("Kick All", {""}, "Besides Host.", function()
+        for players.list(false, false, true) as pid do
+            if pid != players.get_host() then
+                kick(pid, 3, "Kick All")
+            end
+        end
+    end)
+
+    -- Kick All in Interior
+    apl_kii_opts = {"0", "30", "60", "120", "300", "600", "900", "1800", "3600"}
+    PLAYERS_INTERIOR_TIMES = {}
+    PLAYERS_INTERIOR_KICK = {}
+    PLAYERS_INTERIOR_LISTGEN_LOCK = false
+    PLAYERS_AP_K_LISTGEN_LOCK = false
+
+    PLAYERS_R_KICK = {}
+    PLAYERS_V_KICK = {}
+
+    apl_kii = menu.textslider(ap_list_removals, "Kick if Interior", {""}, "", apl_kii_opts, function(index, val, click_type)
+        while PLAYERS_INTERIOR_LISTGEN_LOCK do wait() end
+        local p_rem = #PLAYERS_INTERIOR_KICK
+        for PLAYERS_INTERIOR_KICK as pid do
+            kick(pid, 3, "In Interior ("..val.."s)")
+        end
+        if opt_hitmarker_on_kick then
+            PlaySound(hitmarker_soundfile)
+            draw_hitmarker()
+        end
+        notify("Removed "..p_rem.." Players.")
+    end)
+
+    apl_rk = menu.action(ap_list_removals, "Relay Kick", {"lkickrelay"}, "", function()
+        local kicked = false
+        while PLAYERS_AP_K_LISTGEN_LOCK do wait() end
+        local nk = #PLAYERS_R_KICK
+        for PLAYERS_R_KICK as pid do
+            kicked = true
+            kick(pid, 3, "Connected to Relay")
+        end
+        if kicked then
+            if opt_hitmarker_on_kick then
+                PlaySound(hitmarker_soundfile)
+                draw_hitmarker()
+            end
+            notify("Removed "..nk.." Players.")
+        end
+    end)
+
+    apl_vk = menu.action(ap_list_removals, "VPN Kick", {"lkickvpn"}, "", function()
+        local kicked = false
+        while PLAYERS_AP_K_LISTGEN_LOCK do wait() end
+        local nk = #PLAYERS_V_KICK
+        while PLAYERS_AP_K_LISTGEN_LOCK do wait() end
+        for PLAYERS_V_KICK as pid do
+            kicked = true
+            kick(pid, 3, "Connected to VPN")
+        end
+        if kicked then
+            if opt_hitmarker_on_kick then
+                PlaySound(hitmarker_soundfile)
+                draw_hitmarker()
+            end
+            notify("Removed "..nk.." Players.")
+        end
+    end)
+
+    -- All Players Crashed
+    alr_crash = ap_list_removals:list("Crashes", {""}, "")
+
+
+
+menu.action(all_players_list, "Interior Kick", {""}, "", function()
+    for players.list(false, true, true) as pid do
+        INTERIOR.CLEAR_INTERIOR_STATE_OF_ENTITY(PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid))
+    end
+end)
+
+    -- Ghost Thread 1
+    util.create_tick_handler(function()
+        PLAYERS_AP_K_LISTGEN_LOCK = true
+        PLAYERS_R_KICK = {}
+        PLAYERS_V_KICK = {}
+        for players.list(false, opt_never_kick_friends, true) as pid do
+            if players.is_in_interior(pid) then
+                if PLAYERS_INTERIOR_TIMES[pid] == nil then PLAYERS_INTERIOR_TIMES[pid] = os.clock() * 1000 end
+            else
+                if PLAYERS_INTERIOR_TIMES[pid] != nil then PLAYERS_INTERIOR_TIMES[pid] = nil end
+            end
+            if string.find(player_ip(pid), "Relay") != nil then PLAYERS_R_KICK[#PLAYERS_R_KICK + 1] = pid end
+            if players.is_using_vpn(pid) then PLAYERS_V_KICK[#PLAYERS_V_KICK + 1] = pid end
+        end
+        PLAYERS_AP_K_LISTGEN_LOCK = false
+
+        local rem_str = ""
+        local value = 0
+        local rk_str = ""
+        local vk_str = ""
+
+        pluto_switch apl_kii.value do
+            case 1:
+                value = 0
+                break
+            case 2:
+                value = 30
+                break
+            case 3:
+                value = 60
+                break
+            case 4:
+                value = 120
+                break
+            case 5:
+                value = 300
+                break
+            case 6:
+                value = 600
+                break
+            case 7:
+                value = 900
+                break
+            case 8:
+                value = 1800
+                break
+            case 9:
+                value = 3600
+                break
+        end
+
+        PLAYERS_INTERIOR_LISTGEN_LOCK = true
+        PLAYERS_INTERIOR_KICK = {}
+        for pid, start in PLAYERS_INTERIOR_TIMES do
+            if (os.clock() * 1000) - PLAYERS_INTERIOR_TIMES[pid] > value * 1000 then
+                PLAYERS_INTERIOR_KICK[#PLAYERS_INTERIOR_KICK + 1] = pid
+            end
+        end
+        PLAYERS_INTERIOR_LISTGEN_LOCK = false
+
+        apl_kii.menu_name = "Kick if Interior ("..#PLAYERS_INTERIOR_KICK..")"
+        apl_rk.menu_name = "Relay Kick ("..#PLAYERS_R_KICK..")"
+        apl_vk.menu_name = "VPN Kick ("..#PLAYERS_V_KICK..")"
+        for PLAYERS_INTERIOR_KICK as pid do
+            rem_str = rem_str..players.get_name_with_tags(pid).."\n"
+        end
+        for PLAYERS_R_KICK as pid do
+            rk_str = rk_str..players.get_name_with_tags(pid).."\n"
+        end
+        for PLAYERS_V_KICK as pid do
+            vk_str = vk_str..players.get_name_with_tags(pid).."\n"
+        end
+        apl_kii.help_text = rem_str
+        apl_rk.help_text = rk_str
+        apl_vk.help_text = vk_str
+    wait(30) end)
+
+---------------------
+-- Player Menu
+---------------------
+-- Player Menu Features
+
+local function player(pid)
+    if not players.exists(pid) then return end
+
+    -- Funcs
+    local function _ped()
+        return PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+    end
+
+    local function _name()
+        return players.get_name(pid)
+    end
+
+    menu.divider(menu.player_root(pid), "Xcript")
+
+    local pm_friendly = menu.list(menu.player_root(pid), "Friendly / Neutral", {""}, "")
+    local pm_trolling = menu.list(menu.player_root(pid), "Troll & Grief", {""}, "")
+    local pm_removals = menu.list(menu.player_root(pid), "Removals", {""}, "")
+    local pm_misc = menu.list(menu.player_root(pid), "Misc", {""}, "")
+    local pm_private0 = nil
+    if private_vers then pm_private0 = menu.list(menu.player_root(pid), pmconst_0, {""}, "") end -- PrivateModule0
+    menu.action(menu.player_root(pid), "Spectate", {""}, default_help, function()
+        trigger_commands("spectate"..players.get_name(pid))
+    end)
+
+    -- Sub Player Menus
+
+    local pm_fr_vehicle = menu.list(pm_friendly, "Vehicle", {""}, "Friendly / Neutral Vehicle Options.")
+    -- local pm_fr_weapons = menu.list(pm_friendly, "Weapon", {""}, "Friendly / Neutral Weapon Options.")
+
+    local pm_troll_vehicle = menu.list(pm_trolling, "Vehicle", {""}, "")
+    local pm_cust_explosion = menu.list(pm_trolling, "Custom Explosion", {""}, "")
+    -- local pm_cage = menu.list(pm_trolling, "Cage", {""}, "")
+    local pm_npc = menu.list(pm_trolling, "NPC", {""}, "")
+    local pm_exp_attackers = menu.list(pm_npc, "Exploding Attackers", {""}, "")
+    -- local pm_troll_tp = menu.list(pm_trolling, "Teleport Player", {""}, "")
+
+    local pm_kicks = menu.list(pm_removals, "Kicks", {""}, "")
+    local pm_crashes = menu.list(pm_removals, "Crashes", {""}, "")
+    local pm_punishments = menu.list(pm_removals, "Punishments", {""}, "Remove the player if they do something..")
+
+    -- Friendly
+        
+        -- Vehicle
+
+            -- Attach
+            local pm_fr_veh_attach = menu.list(pm_fr_vehicle, "Attach", {""}, "")
+
+            menu.action(pm_fr_veh_attach, "Attach to Car", {"lattocar"}, "", function()
+                if players_last_veh[pid] ~= 0 then
+                    ENTITY.ATTACH_ENTITY_TO_ENTITY(players.user_ped(), players_last_veh[pid], 0, 0.0, -0.20, 2.00, 1.0, 1.0,1, true, true, true, false, 0, true, 0)
+                    attached_entities[#attached_entities + 1] = players_last_veh[pid]
+                end
+            end)
+
+            menu.action(pm_fr_veh_attach, "Attach Their Car to Yours", {"latcartoyours"}, "", function()
+                if players_last_veh[pid] ~= 0 then
+                    ENTITY.ATTACH_ENTITY_TO_ENTITY(players_last_veh[pid], player_cur_car, 0, 0.0, -5.00, 0.00, 1.0, 1.0,1, true, true, true, false, 0, true, 0)
+                    attached_entities[#attached_entities + 1] = players_last_veh[pid]
+                end
+            end)
+
+            menu.action(pm_fr_veh_attach, "Attach Your Car to Theirs", {"latyourcartotheirs"}, "", function()
+                if players_last_veh[pid] ~= 0 then
+                    ENTITY.ATTACH_ENTITY_TO_ENTITY(player_cur_car, players_last_veh[pid], 0, 0.0, -5.00, 0.00, 1.0, 1.0,1, true, true, true, false, 0, true, 0)
+                    attached_entities[#attached_entities + 1] = players_last_veh[pid]
+                end
+            end)
+
+            menu.action(pm_fr_veh_attach, "Detach", {""}, "Command: ldetach", function()
+                detach_action:trigger()
+            end)
+
+            -- God Mode
+            menu.toggle(pm_fr_vehicle, "God Mode", {""}, default_help, function(on)
+                local vehicle = get_vehicle_player_is_in(pid)
+                if ENTITY.DOES_ENTITY_EXIST(vehicle) and request_control(vehicle, true) then
+                    if on then
+                        VEHICLE.SET_VEHICLE_ENVEFF_SCALE(vehicle, 0.0)
+                        VEHICLE.SET_VEHICLE_BODY_HEALTH(vehicle, 1000.0)
+                        VEHICLE.SET_VEHICLE_ENGINE_HEALTH(vehicle, 1000.0)
+                        VEHICLE.SET_VEHICLE_FIXED(vehicle)
+                        VEHICLE.SET_VEHICLE_DEFORMATION_FIXED(vehicle)
+                        VEHICLE.SET_VEHICLE_PETROL_TANK_HEALTH(vehicle, 1000.0)
+                        VEHICLE.SET_VEHICLE_DIRT_LEVEL(vehicle, 0.0)
+                        for i = 0, 10 do VEHICLE.SET_VEHICLE_TYRE_FIXED(vehicle, i) end
+                    end
+                    ENTITY.SET_ENTITY_INVINCIBLE(vehicle, on)
+                    ENTITY.SET_ENTITY_PROOFS(vehicle, on, on, on, on, on, on, true, on)
+                    VEHICLE.SET_DISABLE_VEHICLE_PETROL_TANK_DAMAGE(vehicle, on)
+                    VEHICLE.SET_DISABLE_VEHICLE_PETROL_TANK_FIRES(vehicle, on)
+                    VEHICLE.SET_VEHICLE_CAN_BE_VISIBLY_DAMAGED(vehicle, not on)
+                    VEHICLE.SET_VEHICLE_CAN_BREAK(vehicle, not on)
+                    VEHICLE.SET_VEHICLE_ENGINE_CAN_DEGRADE(vehicle, not on)
+                    VEHICLE.SET_VEHICLE_EXPLODES_ON_HIGH_EXPLOSION_DAMAGE(vehicle, not on)
+                    VEHICLE.SET_VEHICLE_TYRES_CAN_BURST(vehicle, not on)
+                    VEHICLE.SET_VEHICLE_WHEELS_CAN_BREAK(vehicle, not on)
+                end
+            end)
+
+            -- Explode Other Vehicles on Contact
+            local exp_other_on_contact
+            local other_on_contact_last_entity_collided
+            exp_other_on_contact = menu.toggle_loop(pm_fr_vehicle, "Explode Other Vehicles on Contact", {""}, "Could be used for trolling or friendly purposes, so its here.", function()
+                if not players.exists(pid) then
+                    exp_other_on_contact.value = false
+                util.stop_thread() end
+                if players_last_veh[pid] ~= nil then
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        local collided_with = ENTITY._GET_LAST_ENTITY_HIT_BY_ENTITY(players_last_veh[pid])
+                        if other_on_contact_last_entity_collided ~= collided_with then
+                            request_control(collided_with, true)
+                            if pid == players.user() then
+                                if ENTITY.IS_ENTITY_A_VEHICLE(collided_with) or ENTITY.IS_ENTITY_A_PED(collided_with) then
+                                    if csm_on and csm_on_peds then
+                                        PlaySound(hitmarker_soundfile)
+                                        if csm_visuals then draw_hitmarker() end
+                                    end
+                                end
+                            end
+                            NETWORK.NETWORK_EXPLODE_VEHICLE(collided_with, true, true, 0)
+                            other_on_contact_last_entity_collided = collided_with
+                            util.yield()
+                        end
+                    end
+                end
+            end)
+
+            -- Invisible
+            local usingVehInvisibility = false
+            menu.toggle(pm_fr_vehicle, "Invisible", {""}, default_help, function(on)
+                local car = PED.GET_VEHICLE_PED_IS_IN(_ped(), true)
+                if car ~= 0 then
+                    request_control(car, true)
+                    if on then
+                        ENTITY.SET_ENTITY_ALPHA(car, 0)
+                        ENTITY.SET_ENTITY_VISIBLE(car, false, 0)
+                    else
+                        ENTITY.SET_ENTITY_ALPHA(car, 255)
+                        ENTITY.SET_ENTITY_VISIBLE(car, true, 0)
+                    end
+                end
+            end)
+
+        -- Weapon
+            
+
+    -- Troll & Grief
+
+        -- Deleted
+
+        -- Vehicle
+
+            -- SET_VEHICLE_CHEAT_POWER_INCREASE
+            -- SET_VEHICLE_UNDRIVEABLE
+
+            -- Control Players Vehicle
+            -- last vehicle?
+            local pm_cv_sc
+            local control_veh
+            local control_veh_notif = true
+            local ctrl_last = menu.ref_by_path("Vehicle>Last Vehicle>Remote Control")
+            control_veh = menu.toggle_loop(pm_troll_vehicle, "Control Players Current/Last Vehicle", {"lcv"}, "Players last vehicle must be a normal vehicle for this to work.", function()
+                if control_veh_notif then
+                    if StandUser(pid, true) then
+                        notify(stand_notif)
+                        -- control_veh_notif = false
+                        control_veh.value = false
+                        util.stop_thread()
+                    end
+                end
+                if players_last_veh[pid] == 0 or not players_last_veh[pid] then
+                    notify("Could not find players last vehicle (Have they been in one?).")
+                    control_veh.value = false
+                util.stop_thread() end
+                local ped = _ped()
+                local veh_class = VEHICLE.GET_VEHICLE_CLASS(players_last_veh[pid])
+                if not players.exists(pid) then
+                    ENTITY.FREEZE_ENTITY_POSITION(players.user_ped(), false)
+                util.stop_thread() end
+
+                if not ENTITY.DOES_ENTITY_EXIST(ped) and PED.IS_PED_IN_ANY_VEHICLE(ped, false) then
+                    notify(_name().." is too far or isn't in any vehicle. :/")
+                    control_veh.value = false
+                util.stop_thread() end
+
+                if veh_class == 15 then
+                    notify(_name().." is in a helicopter. :/")
+                    control_veh.value = false
+                util.stop_thread() end
+                
+                if veh_class == 16 then
+                    notify(_name().." is in an airplane. :/")
+                    control_veh.value = false
+                util.stop_thread() end
+
+                if PED.IS_PED_IN_ANY_VEHICLE(ped, false) then
+                    if ctrl_last.value then ctrl_last.value = false end
+                    menu.set_menu_name(pm_cv_sc, "Control Players Vehicle (on)")
+                    ENTITY.FREEZE_ENTITY_POSITION(players.user_ped(), true)
+                    if PAD.IS_CONTROL_PRESSED(0, 34) then
+                        while not PAD.IS_CONTROL_RELEASED(0, 34) do
+                            TASK.TASK_VEHICLE_TEMP_ACTION(ped, players_last_veh[pid], 7, 100)
+                            wait()
+                        end
+                    elseif PAD.IS_CONTROL_PRESSED(0, 35) then
+                        while not PAD.IS_CONTROL_RELEASED(0, 35) do
+                            TASK.TASK_VEHICLE_TEMP_ACTION(ped, players_last_veh[pid], 8, 100)
+                            wait()
+                        end
+                    elseif PAD.IS_CONTROL_PRESSED(0, 32) then
+                        TASK.TASK_VEHICLE_TEMP_ACTION(ped, players_last_veh[pid], 28, 100)
+                        wait()
+                        while not PAD.IS_CONTROL_RELEASED(0, 32) do
+                            TASK.TASK_VEHICLE_TEMP_ACTION(ped, players_last_veh[pid], 23, 100)
+                            wait()
+                        end
+                    elseif PAD.IS_CONTROL_PRESSED(0, 33) then
+                        while not PAD.IS_CONTROL_RELEASED(0, 33) do
+                            TASK.TASK_VEHICLE_TEMP_ACTION(ped, players_last_veh[pid], 28, 100)
+                            wait()
+                        end
+                    else
+                        TASK.TASK_VEHICLE_TEMP_ACTION(ped, players_last_veh[pid], 1, 100)
+                    end
+                else
+                    if not ctrl_last.value then
+                        local pos = ENTITY.GET_ENTITY_COORDS(players.user_ped(), false)
+                        local success = set_player_into_suitable_seat(players_last_veh[pid])
+                        wait(10)
+                        ENTITY.SET_ENTITY_COORDS(players.user_ped(), pos.x, pos.y, pos.z)
+                        if not success then
+                            notify("Could not get control of players last vehicle.")
+                            control_veh.value = false
+                            util.stop_thread()
+                        end
+                        ctrl_last.value = true
+                    end
+                end
+            end, function()
+                ENTITY.FREEZE_ENTITY_POSITION(players.user_ped(), false)
+                if ctrl_last.value then ctrl_last.value = false end
+                menu.set_menu_name(pm_cv_sc, "Control Players Vehicle (off)")
+            end)
+
+            menu.action(pm_troll_vehicle, "Net Explode Vehicle", {""}, "", function()
+                if request_control(players_last_veh[pid]) then
+                    NETWORK.NETWORK_EXPLODE_VEHICLE(players_last_veh[pid], true, true, 0)
+                else
+                    notify("Failed to get control of vehicle.")
+                    NETWORK.NETWORK_EXPLODE_VEHICLE(players_last_veh[pid], true, true, 0)
+                end
+            end)
+
+            menu.action(pm_troll_vehicle, "Out Of Control", {""}, "", function()
+                if request_control(players_last_veh[pid]) then
+                    VEHICLE.SET_VEHICLE_OUT_OF_CONTROL(players_last_veh[pid], true, true)
+                else
+                    notify("Failed to get control of vehicle.")
+                    VEHICLE.SET_VEHICLE_OUT_OF_CONTROL(players_last_veh[pid], true, true)
+                end
+            end)
+
+            -- On Contact
+            local pm_troll_vehicle_oc = menu.list(pm_troll_vehicle, "On Contact", {""}, "")
+
+                -- Explode Players Vehicle on Contact
+                local exp_veh_on_contact
+                local veh_on_contact_last_entity_collided
+                exp_veh_on_contact =  menu.toggle_loop(pm_troll_vehicle_oc, "Explode", {"lexpvehonc"}, "The Players vehicle will explode on contact with anything.\nDoes not include contact made by the tires.", function()
+                    if not players.exists(pid) then
+                        exp_veh_on_contact.value = false
+                    util.stop_thread() end
+                    local ped = _ped()
+                    local has_entity_collided = ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid])
+                    if has_entity_collided then
+                        local collided_with = ENTITY._GET_LAST_ENTITY_HIT_BY_ENTITY(players_last_veh[pid])
+                        if veh_on_contact_last_entity_collided != collided_with then
+                            -- Used to be only FIRE.ADD_EXPLOSION but this works better.
+                            if request_control(players_last_veh[pid]) then
+                                NETWORK.NETWORK_EXPLODE_VEHICLE(players_last_veh[pid], true, true, 0)
+                            else
+                                local pos = tracky(pid, ENTITY.GET_ENTITY_COORDS(ped, false))
+                                FIRE.ADD_EXPLOSION(pos.x, pos.y, pos.z, 1, 1.0, false, true, 0.0, false)
+                            end
+                            veh_on_contact_last_entity_collided = collided_with
+                            util.yield()
+                        end
+                    end
+                end)
+
+                -- Turn Around on Contact
+                menu.toggle_loop(pm_troll_vehicle_oc, "Turn Around", {""}, "", function()
+                    local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>Turn Around")
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        ref:trigger()
+                        wait(250)
+                    end
+                end)
+
+                -- EMP on Contact
+                menu.toggle_loop(pm_troll_vehicle_oc, "EMP", {""}, "", function()
+                    local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>EMP")
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        ref:trigger()
+                        wait(100)
+                    end
+                end)
+
+                -- Ignite on Contact
+                menu.toggle_loop(pm_troll_vehicle_oc, "Ignite", {""}, "", function()
+                    local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>Ignite")
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        ref:trigger()
+                        wait(100)
+                    end
+                end)
+
+                -- Delete on Contact
+                menu.toggle_loop(pm_troll_vehicle_oc, "Delete", {""}, "", function()
+                    local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>Delete")
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        ref:trigger()
+                        wait(100)
+                    end
+                end)
+
+                -- Pop Tires on Contact
+                -- menu.toggle_loop(pm_troll_vehicle_oc, "Pop Random Tire", {""}, "", function()
+                --     local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>Pop Tires")
+                --     if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                --         ref:setState(tostring(math.random(1, 4)))
+                --         wait()
+                --         ref:trigger()
+                --         wait(100)
+                --     end
+                -- end)
+
+                -- Sling Back on Contact
+                menu.toggle_loop(pm_troll_vehicle_oc, "Slingshot Back", {""}, "", function()
+                    local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>Slingshot")
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        ref:setState("Backward")
+                        wait()
+                        ref:trigger()
+                        wait(200)
+                    end
+                end)
+
+                -- Sling Up on Contact
+                menu.toggle_loop(pm_troll_vehicle_oc, "Slingshot Up", {""}, "", function()
+                    local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>Slingshot")
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        ref:setState("Up")
+                        wait()
+                        ref:trigger()
+                        wait(200)
+                    end
+                end)
+
+                -- Detach Wheels on Contact
+                menu.toggle_loop(pm_troll_vehicle_oc, "Detach Wheels", {""}, "", function()
+                    local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>Detach Wheel")
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        -- ref:setState(tostring(math.random(1, 4)))
+                        -- wait()
+                        ref:trigger()
+                        wait(1000)
+                    end
+                end)
+
+                -- Spin on Contact
+                menu.toggle_loop(pm_troll_vehicle_oc, "Spin", {""}, "", function()
+                    local ref = menu.ref_by_rel_path(menu.player_root(pid), "Trolling>Vehicle>Spin")
+                    if ENTITY.HAS_ENTITY_COLLIDED_WITH_ANYTHING(players_last_veh[pid]) then
+                        ref.value = true
+                        wait(100)
+                        ref.value = false
+                        wait(100)
+                    end
+                end)
+
+            -- Fuck Car
+            menu.action(pm_troll_vehicle, "Everything is Sideways", {"l90v"}, "Idek what to call this. I hate naming things.", function()
+                if players_last_veh[pid] == nil then
+                    notify("Could not find players last vehicle.")
+                    return
+                end
+                local dict = "creatures@dog@move"
+                local anim = "sprint"
+                RequestAnimation(dict)
+                request_control(players_last_veh[pid], true)
+                TASK.TASK_VEHICLE_PLAY_ANIM(players_last_veh[pid], dict, anim)
+            end)
+
+            -- Freeze Vehicle
+            local usingFreezeVehicle = false
+            menu.toggle(pm_troll_vehicle, "Freeze Vehicle", {"lfrzv"}, "Freeze any vehicle the player enters.", function(on)
+                usingFreezeVehicle = on
+                if not usingFreezeVehicle then return end
+
+                while usingFreezeVehicle and is_player_active(pid, false, true) and
+                not util.is_session_transition_active() do
+                    local vehicle = get_vehicle_player_is_in(pid)
+                    if ENTITY.DOES_ENTITY_EXIST(vehicle) and request_control(vehicle) then
+                        ENTITY.FREEZE_ENTITY_POSITION(vehicle, true)
+                    end
+                    util.yield_once()
+                end
+
+                local vehicle = get_vehicle_player_is_in(pid)
+                if  ENTITY.DOES_ENTITY_EXIST(vehicle) and request_control(vehicle) then
+                    ENTITY.FREEZE_ENTITY_POSITION(vehicle, false)
+                end
+            end)
+
+            -- Invert Vehicle Controls
+            menu.toggle_loop(pm_troll_vehicle, "Invert Vehicle Pedals", {""}, "", function()
+                if not util.is_session_transition_active() then
+                    local vehicle = get_vehicle_player_is_in(pid)
+                    if ENTITY.DOES_ENTITY_EXIST(vehicle) and request_control(vehicle) then
+                        VEHICLE.SET_INVERT_VEHICLE_CONTROLS(vehicle, true)
+                    end
+                end
+            wait() end, function()
+                if not util.is_session_transition_active() then
+                    local vehicle = get_vehicle_player_is_in(pid)
+                    if ENTITY.DOES_ENTITY_EXIST(vehicle) and request_control(vehicle) then
+                        VEHICLE.SET_INVERT_VEHICLE_CONTROLS(vehicle, false)
+                    end
+                end
+            end)
+
+        -- NPC
+            -- Exploding Attackers
+
+                local attacker_mdl = joaat("s_m_y_clown_01")
+                local detonate_dist = 5.00
+                local immortality = false
+
+                menu.action(pm_exp_attackers, "Send Attacker", {"lbomb"}, "", function()
+                    local ped = _ped()
+                    local pos = players.get_position(pid)
+                    local dict = "swimming@scuba"
+                    local name = "dive_glide"
+                    RequestAnimation(dict)
+                    RequestModel(attacker_mdl)
+                    pos.x += 15
+                    pos.y += math.random(-25, 25)
+                    if attacker == nil or not ENTITY.DOES_ENTITY_EXIST(attacker) then
+                        attacker = entities.create_ped(26, attacker_mdl, pos, 0)
+                        ENTITY.SET_ENTITY_INVINCIBLE(attacker, immortality)
+                        PED.SET_PED_CAN_RAGDOLL(attacker, false)
+                        PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(attacker, true)
+                        entities.set_can_migrate(attacker, false)
+                        TASK.TASK_PLAY_ANIM(attacker, dict, name, 5.0, 2.5, -1, 1|16|32, 1.0, false, false, false)
+                        repeat
+                            TASK.TASK_GO_TO_ENTITY(attacker, ped,  -1, 1,  500.0, 0.0, 0)
+                            pos = players.get_position(pid)
+                            local ped_pos = v3.distance(ENTITY.GET_ENTITY_COORDS(attacker), pos)
+                            util.yield(100)
+                        until ped_pos < detonate_dist
+                        ENTITY.SET_ENTITY_INVINCIBLE(attacker, false)
+                        FIRE.ADD_EXPLOSION(GET_ENTITY_COORDS(attacker), 82, 10000.0, true, false, 1.0, false)
+                        util.yield(1000)
+                        entities.delete(attacker)
+                    elseif ENTITY.DOES_ENTITY_EXIST(attacker) and PED.IS_PED_DEAD_OR_DYING(attacker) then
+                        entities.delete(attacker)
+                    else
+                        util.toast("You already have an active attacker. :/")
+                    end
+                end)
+
+                menu.divider(pm_exp_attackers, "Options")
+
+                menu.list_select(pm_exp_attackers, "Ped Model", {""}, "", attackers.cnames, 1, function(index)
+                    attacker_mdl = joaat(attackers.mdl[index])
+                end)
+
+                menu.slider_float(pm_exp_attackers, "Detonate Distance", {""}, "", 0, 1000, 500, 100, function(value)
+                    detonate_dist = value / 100
+                end)
+
+                menu.toggle(pm_exp_attackers, "Immortality", {""}, "", function(on)
+                    on = toggled
+                end)
+
+                menu.action(pm_exp_attackers, "Delete Attacker", {""}, "", function()
+                    if attacker == nil or not DOES_ENTITY_EXIST(attacker) then
+                        util.toast("You don't have an active attacker. :/")
+                        return 
+                    end
+                    entities.delete(attacker)
+                end)
+
+            -- Random Peds Flee
+            menu.toggle_loop(pm_npc, "Peds Flee", {""}, "", function()
+                PLAYER.SET_ALL_NEUTRAL_RANDOM_PEDS_FLEE(pid, true)
+                PLAYER.SET_ALL_RANDOM_PEDS_FLEE(pid, true)
+                PLAYER.SET_ALL_RANDOM_PEDS_FLEE_THIS_FRAME(pid)
+                PLAYER.SET_ALL_NEUTRAL_RANDOM_PEDS_FLEE_THIS_FRAME(pid)
+            end, function()
+                PLAYER.SET_ALL_NEUTRAL_RANDOM_PEDS_FLEE(pid, false)
+                PLAYER.SET_ALL_RANDOM_PEDS_FLEE(pid, false)
+            end)
+
+            -- Cops Have ESP
+            menu.toggle_loop(pm_npc, "Cops Have ESP", {""}, "Will cause the player to never lose the cops once they have a wanted level.", function()
+                if PLAYER.GET_PLAYER_WANTED_LEVEL(pid) > 0 then
+                    PLAYER.UPDATE_WANTED_POSITION_THIS_FRAME(pid)
+                    PLAYER.REPORT_POLICE_SPOTTED_PLAYER(pid)
+                end
+            end)
+            
+            -- Always Wanted
+            menu.toggle_loop(pm_npc, "Always Wanted 0 Stars", {"law"}, "Cops will always attack the player, even if they have 0 stars.", function()
+                if readyInSession() then
+                    PLAYER.SET_LAW_PEDS_CAN_ATTACK_NON_WANTED_PLAYER_THIS_FRAME(pid)
+                end
+            end)
+
+            -- Traumatize
+            local traumatize_option_hashes = {1302784073}
+            local traumatize_options = {"Lester", "Clone"}
+            menu.list_action(pm_npc, "Traumatize", {""}, "Spawn a ped that kils themselves in front of them.", traumatize_options, function(index, value, click_type)
+                local plyr = _ped()
+                local c = ENTITY.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(plyr, 0.0, 1.0, 0.0)
+                local ped = 0
+                if index ~= 2 then
+                    local hash = traumatize_option_hashes[index]
+                    request_model_load(hash)
+                    ped = entities.create_ped(3, hash, c, ENTITY.GET_ENTITY_HEADING(plyr) + 180)
+                else
+                    ped = PED.CLONE_PED(plyr, true, false, true)
+                    ENTITY.SET_ENTITY_COORDS(ped, c.x, c.y, c.z)
+                    ENTITY.SET_ENTITY_HEADING(ped, ENTITY.GET_ENTITY_HEADING(plyr) + 180)
+                end
+                do_ped_suicide(ped)
+            end)
+
+            -- Suicide Closest
+            menu.action(pm_npc, "Suicide Closest", {""}, "", function()
+                local ped = get_closest_ped(players.get_position(pid), false)
+                if ped ~= nil then
+                    do_ped_suicide(ped)
+                end
+            end)
+
+            -- Arrest Player
+            menu.action(pm_npc, "Arrest Player", {"larrest"}, "Closest ped will cuff the player and bound the players ankles.\nPlayer won't be able to pull out a weapon, won't be able to climb obstacles, and won't be able to get up when ragdolled.", function()
+                if not util.is_session_transition_active() then
+                    if NETWORK.NETWORK_IS_SESSION_ACTIVE() then
+                        local ped = _ped()
+                        local pos = ENTITY.GET_ENTITY_COORDS(ped)
+                        local officer = get_closest_ped(pos, false)
+                        if officer then
+                            -- if NETWORK.REQUEST_CONTROL_OF_ENTITY(officer) and NETWORK.REQUEST_CONTROL_OF_ENTITY(ped) then
+                            --     TASK.TASK_ARREST_PED(officer, ped)
+                            -- else
+                            --     notify("Could not get control of 1 or more Entities.")
+                            --     return
+                            -- end
+                            -- NETWORK.REQUEST_CONTROL_OF_ENTITY(officer)
+                            -- NETWORK.REQUEST_CONTROL_OF_ENTITY(ped)
+
+                            -- Stop trying after 60 seconds..
+                            local i = 0
+                            request_control_of_entity(officer)
+                            PED.SET_PED_CONFIG_FLAG(ped, 157, true)
+                            PED.SET_PED_CONFIG_FLAG(officer, 155, true)
+                            PED.SET_PED_CONFIG_FLAG(officer, 249, true)
+                            TASK.TASK_ARREST_PED(officer, ped)
+                            util.yield()
+                            log(IS_PED_RUNNING_ARREST_TASK(officer))
+
+                            -- or flag 450 PedIsArresting
+
+                            -- while TASK.IS_PED_RUNNING_ARREST_TASK(officer) and i < 6000 do
+                            --     i = i + 1
+                            --     log("task1")
+                            --     util.yield()
+                            -- end
+                            if i < 6000 then
+                                log("yes1")
+                                request_control_of_entity(ped)
+                                PED.SET_ENABLE_BOUND_ANKLES(ped, true)
+                                PED.SET_ENABLE_HANDCUFFS(ped, true)
+                                PED.SET_PED_CONFIG_FLAG(ped, 107, false)
+                                PED.SET_PED_CONFIG_FLAG(ped, 318, true)
+                                TASK.CLEAR_PED_TASKS_IMMEDIATELY(ped)
+                                util.yield()
+                                TASK.TASK_PLAY_ANIM(ped, "mp_prison_break", "handcuffed", 8.0, 1.0, -1, 1, 0, false, false, false)
+                            end
+                            if TASK.IS_PED_CUFFED(ped) then
+                                notify("Arrested and cuffed player ".._name().."!")
+                            else
+                                notify("Was not able to Arrest player ".._name().." :/")
+                            end
+                        else
+                            notify("Could not find suitable ped close by.")
+                            return
+                        end
+                    end
+                end
+            end)
+
+            menu.action(pm_npc, "Uncuff Player", {""}, "", function()
+                local ped = _ped()
+                request_control_of_entity(ped)
+                PED.SET_ENABLE_BOUND_ANKLES(ped, false)
+                PED.SET_ENABLE_HANDCUFFS(ped, false)
+                PED.SET_PED_CONFIG_FLAG(ped, 318, false)
+            end)
+
+            menu.action(pm_npc, "test", {""}, "", function()
+                local ped = _ped()
+                log("Cuffed:"..GET_PED_CONFIG_FLAG(ped, 120).." | Ankles Bound:"..GET_PED_CONFIG_FLAG(ped, 121))
+            end)
+            -- force_ped_motion_state
+            -- SET_CAN_PED_SELECT_INVENTORY_WEAPON
+            -- SET_CAN_PED_SELECT_ALL_WEAPONS
+            -- ok goodnight
+
+        -- Disable Damage From Player
+        menu.toggle(pm_trolling, "Disable Damage From Player", {""}, "", function(on)
+            PLAYER.SET_PLAYER_CAN_DAMAGE_PLAYER(pid, players.user(), !on)
+        end)
+
+        -- Freeze?
+        menu.toggle(pm_trolling, "Freeze", {""}, "", function(on)
+            PLAYER.SET_PLAYER_CONTROL(pid, !on, 1 << 8)
+            log("Set player control 1 << 1 to "..!on, "dd")
+        end)
+
+        local attatch_root = menu.list(pm_trolling, "Attatch", {""}, "")
+
+        -- Attatch Root
+
+            local usingRape = false
+            menu.toggle(attatch_root, "Rape", {""}, "", function(on)
+                usingRape = on
+                -- Otherwise the game would crash
+                if pid == players.user() then
+                    return
+                end
+                if usingRape then
+                    local target = _ped()
+                    STREAMING.REQUEST_ANIM_DICT("rcmpaparazzo_2")
+                    while not STREAMING.HAS_ANIM_DICT_LOADED("rcmpaparazzo_2") do
+                        util.yield_once()
+                    end
+                    TASK.TASK_PLAY_ANIM(players.user_ped(), "rcmpaparazzo_2", "shag_loop_a", 8.0, -8.0, -1, 1, 0.0, false, false, false)
+                    ENTITY.ATTACH_ENTITY_TO_ENTITY(players.user_ped(), target, 0, 0, -0.3, 0, 0.0, 0.0, 0.0, false, true, false, false, 0, true, 0)
+                    while usingRape and is_player_active(pid, false, true) and
+                    not util.is_session_transition_active() do
+                        util.yield_once()
+                    end
+                    usingRape = false
+                    TASK.CLEAR_PED_TASKS_IMMEDIATELY(players.user_ped())
+                    ENTITY.DETACH_ENTITY(players.user_ped(), true, false)
+                end
+            end)
+
+        -- Apply Damage Pack
+        menu.list_action(pm_trolling, "Apply Damage Pack", {""}, "", ped_damage_packs, function(index, value, click_type)
+            PED.APPLY_PED_DAMAGE_PACK(_ped(), value, 100.0, 1.0)
+        end)
+
+        -- Play Dead?
+        menu.toggle_loop(pm_trolling, "Play Dead", {""}, "Play dead?", function()
+            if not util.is_session_transition_active() then
+                if NETWORK.NETWORK_IS_SESSION_ACTIVE() then
+                    local ped = _ped()
+                    local result = PED.FORCE_PED_MOTION_STATE(ped, 0x0DBB071C, 0, 0, 0)
+                end
+            end
+        end)
+
+        -- Die When Ragdoll
+        menu.toggle(pm_trolling, "Die When Ragdoll", {""}, "Player will die whenever they fall to the ground.", function(on)
+            local ped = _ped()
+            request_control_of_entity(ped)
+            if on then
+                PED.SET_PED_CONFIG_FLAG(ped, 33, true)
+            else
+                PED.SET_PED_CONFIG_FLAG(ped, 33, false)
+            end
+        end)
+
+        -- Disable Player Combat
+        menu.toggle_loop(pm_trolling, "Disable Player Combat", {""}, "Inhibits the player from using any method of combat including melee and firearms.\nWorks on some menus.", function()
+            if readyInSession() then
+                PLAYER.DISABLE_PLAYER_FIRING(pid, true)
+            end
+        end, function()
+            PLAYER.DISABLE_PLAYER_FIRING(pid, false)
+        end)
+
+        -- Unmutes player mic? maybe? would be cool...
+        menu.toggle(pm_trolling, "Unmute Mic?test", {""}, "R* uses this to hear all players when spectating.\nIt allows you to hear other online players when their chat is on none, crew and or friends. Spooky.", function(on)
+            if not util.is_session_transition_active() then
+                if NETWORK.NETWORK_IS_SESSION_ACTIVE() then
+                    NETWORK.NETWORK_OVERRIDE_CHAT_RESTRICTIONS(players.user(), on)
+                    NETWORK.NETWORK_OVERRIDE_RECEIVE_RESTRICTIONS(players.user(), on)
+                    NETWORK.NETWORK_OVERRIDE_SEND_RESTRICTIONS(pid, on)
+                end
+            end
+        end)
+
+    -- Removals
+        -- Kick
+            menu.action(pm_kicks, "CoD Kick", {"lck"}, "", function()
+                kick(pid, 4, "Manual Kick")
+            end)
+
+            menu.action(pm_kicks, "Taunt Kick", {"ltk"}, "Send a Taunt for the player to look at as they get kicked.\nOnly available when you're host.\nWon't taunt other Stand users.", function()
+                if players.get_host() == players.user() then
+                    kick(pid, 6, "Manual Kick")
+                else
+                    notify("This command is only available when you're the session host.")
+                end
+            end)
+
+            menu.action(pm_kicks, "Write Them a Letter Kick", {"llk"}, "Write the target a letter for them to see in chat as they get kicked.", function(click_type)
+                menu.show_command_box("llk".._name().." > ".._name()..", ")
+            end, function(str)
+                if str ~= nil and str ~= "" then
+                    msg(str, false, true, true)
+                    wait(300)
+                end
+                kick(pid, 2, "Manual Kick")
+            end)
+
+            menu.action(pm_kicks, "Memory Kick", {"lmk"}, "Remembers the Player in your Remembered Players List, then kicks them.", function()
+                kick(pid, 7, "Manual Kick")
+            end)
+
+            menu.action(pm_kicks, "Block Kick", {"lbk"}, "Blocks the player from ever re-joining you, then kicks them.", function()
+                trigger_commands("historyblock "..players.get_name(pid))
+                kick(pid, 2, "Block Kick")
+            end)
+
+        -- Crash
+
+            pcf_cycle = false
+
+            menu.action(pm_crashes, "PCF Crash", {""}, "", function()
+                if pcf_cycle then
+                    for i = 1, 5 do
+                        for x = 0, 459 do
+                            PED.SET_PED_CONFIG_FLAG(_ped(), x, true)
+                            -- wait()
+                        end
+                        for x = 0, 459 do
+                            PED.SET_PED_CONFIG_FLAG(_ped(), x, false)
+                            -- wait()
+                        end
+                    end
+                    pcf_cycle = false
+                else
+                    for i = 1, 5 do
+                        for x = 0, 459 do
+                            PED.SET_PED_CONFIG_FLAG(_ped(), x, false)
+                            -- wait()
+                        end
+                        for x = 0, 459 do
+                            PED.SET_PED_CONFIG_FLAG(_ped(), x, true)
+                            -- wait()
+                        end
+                    end
+                    pcf_cycle = true
+                end
+                notify("Sent PCF Crash to ".._name().."! ("..pcf_cycle..")")
+            end)
+
+            menu.action(pm_crashes, "FedEx Crash", {""}, "Steals their game and ships it 10,000 different dimensions.", function()
+                request_model_load(joaat("cargoplane"))
+                request_model_load(joaat("cargoplane2"))
+                for t = 0, 20 do
+                    util.create_thread(function(thr)
+                        for x = 0, 50 do
+                            local s_objects = {}
+                            for i = 0, 10 do
+                                local hash = joaat("cargoplane")
+                                if (i%2 == 0) then hash = joaat("cargoplane2") end
+                                local pos = tracky(pid, ENTITY.GET_ENTITY_COORDS(_ped(), false))
+                                local v = VEHICLE.CREATE_VEHICLE(hash, pos.x, pos.y, pos.z+1, math.random(0, 360), true, false, true)
+                                entities.set_can_migrate(v, false)
+                                s_objects[#s_objects + 1] = v
+                            end
+                            for s_objects as obj do
+                                entities.delete(obj)
+                            end
+                        wait() end
+                        util.stop_thread()
+                        return false
+                    end)
+                end
+            end)
+        
+        -- Punishments
+
+            local ppun = {}
+            local player_punishment_type = 1
+            local send_pm_pun_msg = false
+
+            local function do_player_punishment(reason)
+                pluto_switch player_punishment_type do
+                    case 1:
+                        kick(pid, 2, reason)
+                        break
+                    case 2:
+                        trigger_commands("kill".._name())
+                        break
+                end
+            end
+
+            -- Punishment Type
+            menu.textslider_stateful(pm_punishments, "Punishment Type", {""}, "", {"Kick", "Kill"}, function(i)
+                player_punishment_type = i
+            end)
+
+            -- Send Message in Chat
+            menu.toggle(pm_punishments, "Send Message in Chat", {""}, "", function(on)
+                send_pm_pun_msg = on
+            end)
+
+            -- Enable Random Punishment
+            menu.action(pm_punishments, "Toggle Random Punishment", {""}, default_help, function()
+                local on = true
+                while on do
+                    local rng = math.random(1, #ppun)
+                    if ppun[rng].value == false then
+                        ppun[rng].value = true
+                        notify($"Enabled {ppun[rng].menu_name}")
+                        on = false
+                    end
+                wait() end
+            end)
+
+            -- Remove if Player Speaks
+            ppun[1] = menu.toggle(pm_punishments, "Shut Up", {""}, "Remove the player if they use voice chat.", function(on)
+                if send_pm_pun_msg and on then
+                    local msgtxt = $"{_name()}, if you use voice chat you'll be "
+                    if player_punishment_type == 1 then
+                        msgtxt = msgtxt.."removed"
+                    else
+                        msgtxt = msgtxt.."killed"
+                    end
+                    msg(msgtxt..".", false, true, true)
+                end
+                while ppun[1]:isValid() and ppun[1].value do
+                    if NETWORK.NETWORK_IS_PLAYER_TALKING(pid) then
+                        do_player_punishment("Used Voice Chat")
+                    end
+                wait() end
+            end)
+
+            ppun[2] = menu.toggle(pm_punishments, "Stop Typing", {""}, "Remove the player if they send a message in text chat.", function(on)
+                if send_pm_pun_msg and on then
+                    local msgtxt = $"{_name()}, if you send a message in the text chat you'll be "
+                    if player_punishment_type == 1 then
+                        msgtxt = msgtxt.."removed"
+                    else
+                        msgtxt = msgtxt.."killed"
+                    end
+                    msg(msgtxt..".", false, true, true)
+                end
+                if on then
+                    kick_if_player_speaks[#kick_if_player_speaks + 1] = pid
+                    while ppun[2]:isValid() and ppun[2].value do
+                        if #kick_if_player_speaks_queue > 0 then
+                            for i = 1, #kick_if_player_speaks_queue do
+                                if pid == kick_if_player_speaks_queue[i] then
+                                    kick_if_player_speaks_queue[i] = nil
+                                    for x = 1, #kick_if_player_speaks do
+                                        if pid == kick_if_player_speaks[x] then
+                                            kick_if_player_speaks[x] = nil
+                                        end
+                                    end
+                                    do_player_punishment("Typed In Chat")
+                                end
+                            end
+                        end
+
+                        wait()
+                    end
+                else
+                    for i = 1, #kick_if_player_speaks do
+                        if pid == kick_if_player_speaks[i] then
+                            kick_if_player_speaks[i] = nil
+                        end
+                    end
+                end
+            end)
+
+            -- Remove if Player Aims
+            ppun[3] = menu.toggle(pm_punishments, "Achieve World Peace", {""}, "Remove the player if they aim a weapon (at anything).", function(on)
+                if send_pm_pun_msg and on then
+                    local msgtxt = $"{_name()}, if you aim a weapon you'll "
+                    if player_punishment_type == 1 then
+                        msgtxt = msgtxt.."go bye bye"
+                    else
+                        msgtxt = msgtxt.."be killed"
+                    end
+                    msg(msgtxt..".", false, true, true)
+                end
+                while ppun[3]:isValid() and ppun[3].value do
+                    if PLAYER.IS_PLAYER_FREE_AIMING(pid) then
+                        do_player_punishment("Aimed Weapon")
+                    end
+                wait() end
+            end)
+
+            -- Remove Player if Weilding Explosive
+            ppun[4] = menu.toggle(pm_punishments, "No Boom-Boom", {""}, "Removes the player if they are weilding an explosive weapon.", function(on)
+                if send_pm_pun_msg and on then
+                    local msgtxt = $"{_name()}, if you weild an explosive weapon you'll be "
+                    if player_punishment_type == 1 then
+                        msgtxt = msgtxt.."removed"
+                    else
+                        msgtxt = msgtxt.."killed"
+                    end
+                    msg(msgtxt..".", false, true, true)
+                end
+                while ppun[4]:isValid() and ppun[4].value do
+                    if WEAPON.IS_PED_ARMED(_ped(), 2) then
+                        do_player_punishment("Explosive Weapon")
+                    end
+                wait() end
+            end)
+
+            -- Remove player if they move
+            ppun[5] = menu.toggle(pm_punishments, "Don't Move", {""}, "If the player moves they go bye bye.", function(on)
+                if send_pm_pun_msg and on then
+                    local msgtxt = $"{_name()}, if you move you'll "
+                    if player_punishment_type == 1 then
+                        msgtxt = msgtxt.."go bye bye"
+                    else
+                        msgtxt = msgtxt.."be killed"
+                    end
+                    msg(msgtxt..".", false, true, true)
+                end
+                local spos = ENTITY.GET_ENTITY_COORDS(_ped(), false)
+                wait(10)
+                while ppun[5]:isValid() and ppun[5].value do
+                    local pos = ENTITY.GET_ENTITY_COORDS(_ped(), false)
+                    if spos.x ~= pos.x and spos.y ~= pos.y then do_player_punishment("Moved") end
+                wait(10) end
+            end)
+
+            -- Remove player if they die
+            ppun[6] = menu.toggle(pm_punishments, "1 Life Left", {""}, "If the player dies, they get kicked.", function(on)
+                if send_pm_pun_msg and on then
+                    local msgtxt = $"{players.get_name(pid)}, you have 1 life left or you'll be "
+                    if player_punishment_type == 1 then
+                        msgtxt = msgtxt.."removed"
+                    else
+                        msgtxt = msgtxt.."killed"
+                    end
+                    msg(msgtxt..".", false, true, true)
+                end
+                while ppun[6]:isValid() and ppun[6].value do
+                    if PLAYER.IS_PLAYER_DEAD(pid) then
+                        do_player_punishment("0 Lives")
+                    end
+                wait() end
+            end)
+
+            -- Remove player if they stop moving
+            ppun[7] = menu.toggle(pm_punishments, "Don't Stop Moving", {""}, "If the player stops moving, they get kicked.", function(on)
+                if send_pm_pun_msg and on then
+                    local msgtxt = $"{_name()}, if you stop moving you'll be "
+                    if player_punishment_type == 1 then
+                        msgtxt = msgtxt.."removed"
+                    else
+                        msgtxt = msgtxt.."killed"
+                    end
+                    msg(msgtxt..".", false, true, true)
+                end
+                while ppun[7]:isValid() and ppun[7].value do
+                    if PED.IS_PED_IN_ANY_VEHICLE(_ped(), false) then
+                        if VEHICLE.IS_VEHICLE_STOPPED(players_last_veh[pid]) then
+                            do_player_punishment("Stopped Moving")
+                        end
+                    else
+                        if PED.IS_PED_STOPPED(_ped()) then
+                            do_player_punishment("Stopped Moving")
+                        end
+                    end
+                wait() end
+            end)
+
+        -- Interior Kick
+        menu.action(pm_removals, "Interior Kick", {""}, "", function()
+            INTERIOR.CLEAR_INTERIOR_STATE_OF_ENTITY(PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid))
+        end)
+
+    -- Misc
+
+        -- Is Remembered?
+        menu.action(pm_misc, "Is Remembered?", {""}, "", function()
+            log(IsPlayerRemembered(names[pid], rids[pid]), "Remembered")
+        end)
+
+        -- Classify As Modder
+        player_mc_det_opt =  menu.action(pm_misc, "Add Manual Classification", {"lmc"}, "Adds a Detection named 'Manual Classification' that will makes Stand classify the player as a Modder.", function()
+            add_mc_det(pid)
+        end)
+
+        menu.attach_after(players.detections_root(pid), menu.link(menu.shadow_root(), player_mc_det_opt))
+
+        menu.action(pm_misc, "Is Friend?", {""}, "", function()
+            log("Friend: "..NETWORK.NETWORK_IS_FRIEND(pid_to_handle(pid)), "dd")
+        end)
+
+        -- menu.action(pm_misc, "Print Classifications", {""}, "", function()
+        --     local classifications = PlayerClassifications(pid)
+        --     log(_name()..": "..table_to_str(classifications), "Classifications")
+        -- end)
+
+        menu.list_action(pm_misc, "Print Detections", {""}, "", {"To Console", "To Chat", "To Team Chat"}, function(i)
+            local classifications = table_to_str(PlayerClassifications(pid))
+            pluto_switch i do
+                case 1:
+                    log(_name()..": "..classifications, "Classifications")
+                    break
+                case 2:
+                    msg("> ".._name().."'s Classifications: "..classifications, false, true, true)
+                    break
+                case 3:
+                    msg("> ".._name().."'s Classifications: "..classifications, true, true, true)
+                    break
+            end
+        end)
+
+        menu.action(pm_misc, "Remember Player", {""}, "Saves the Player and their information.", function()
+            remember_player(pid, "Manual")
+        end)
+
+        -- Log Sex
+        menu.action(pm_misc, "Log Sex", {""}, "", function()
+            local result
+            local model = ENTITY.GET_ENTITY_MODEL(_ped())
+            if model == 2627665880 or model == -1667301416 then
+                result = "Female"
+            else
+                result = "Male"
+            end
+            log("Result: "..result.." Model: "..model)
+        end)
+
+        -- Set Ped Config Flag
+        menu.action(pm_misc, "Toggle Ped Config Flag", {"ltpcf"}, "", function(click_type)
+            menu.show_command_box("ltpcf".._name().." ")
+        end, function(str)
+            if str == "" or str == nil then return end
+            str = tonumber(str)
+            if str == nil or str < 1 or str > 458 then
+                notify("Invalid Flag.\nMust be between 1 and 458.")
+                return
+            end
+            -- local ped = _ped()
+            -- request_control_of_entity(ped)
+            setPedCFlag(_ped(), str, _name())
+        end, "")
+
+        -- Get Ped Config Flag
+        menu.action(pm_misc, "Get Ped Config Flag", {"lgpcf"}, "", function(click_type)
+            menu.show_command_box("lgpcf".._name().." ")
+        end, function(str)
+            if str == "" or str == nil then return end
+            str = tonumber(str)
+            if str < 1 or str > 458 then
+                notify("Invalid Flag.\nMust be between 1 and 458.")
+                return
+            end
+            local ped = _ped()
+            local flag = PED.GET_PED_CONFIG_FLAG(ped, str)
+            notify("Player flag "..str.." is: "..flag)
+            log("Player flag "..str.." is: "..flag)
+        end, "")
+
+        -- Control Player Vehicle Shortcut
+        pm_cv_sc = menu.action(pm_misc, "Control Players Vehicle", {""}, "Player must be in a normal vehicle for this to work.", function()
+            trigger_commands("lcv".._name())
+        end)
+
+        -- Disable Damage From Player
+        menu.toggle(pm_misc, "Disable Damage From Player", {""}, "", function(on)
+            PLAYER.SET_PLAYER_CAN_DAMAGE_PLAYER(pid, players.user(), on)
+        end)
+
+        menu.toggle(pm_misc, "Disable Damaging Player", {""}, "", function(on)
+            PLAYER.SET_PLAYER_CAN_DAMAGE_PLAYER(players.user(), pid, on)
+        end)
+
+        menu.action(pm_misc, "Test TP", {""}, "", function()
+            local pos = HUD.GET_BLIP_INFO_ID_COORD(HUD.GET_CLOSEST_BLIP_INFO_ID(8))
+            local ped = _ped()
+            -- NETWORK.NETWORK_OVERRIDE_COORDS_AND_HEADING(ped, pos.x, pos.y, pos.z, 0.0)
+            -- ENTITY.SET_ENTITY_COORDS(ped, pos.z, pos.y, pos.z)
+            -- PLAYER.START_PLAYER_TELEPORT(pid, pos.x, pos.y, pos.z, 0.0, false, true, false)
+            -- PED.SET_PED_COORDS_KEEP_VEHICLE(ped, pos.z, pos.y, pos.z)
+            ENTITY.SET_ENTITY_COORDS_NO_OFFSET(ped, pos.x, pos.y, pos.z, false, false, false)
+        end)
+
+        menu.action(pm_misc, "Relay?", {""}, "", function()
+            local ref = menu.ref_by_rel_path(menu.player_root(pid), "Information>Connection>IP Address")
+            log(NETWORK.NETWORK_IS_CONNECTED_VIA_RELAY(pid), "Is Relay:")
+            log(ref.value, "IP VAL")
+        end)
+
+        -- Log Proofs
+        menu.action(pm_misc, "Log Proofs", {""}, "", function()
+            local p1 = memory.alloc(1)
+            local p2 = memory.alloc(1)
+            local p3 = memory.alloc(1)
+            local p4 = memory.alloc(1)
+            local p5 = memory.alloc(1)
+            local p6 = memory.alloc(1)
+            local p7 = memory.alloc(1)
+            local p8 = memory.alloc(1)
+            if ENTITY.GET_ENTITY_PROOFS(_ped(), p1, p2, p3, p4, p5, p6, p7, p8) then
+                log("Bullet: "..p1:readByte()..", Fire: "..p2:readByte()..", Exp: "..p3:readByte()..", Collision: "..p4:readByte()..", Melee: "..p5:readByte()..", Steam: "..p6:readByte().." p7: "..p7:readByte()..", Drown: "..p8:readByte(), "Proofs")
+            else
+                log("Failed..", "Proofs - ".._name())
+                log("Bullet: "..p1:readByte()..", Fire: "..p2:readByte()..", Exp: "..p3:readByte()..", Collision: "..p4:readByte()..", Melee: "..p5:readByte()..", Steam: "..p6:readByte().." p7: "..p7:readByte()..", Drown: "..p8:readByte(), "Proofs")
+            end
+        end)
+
+        -- Log R* Dev
+        menu.action(pm_misc, "Log R* Dev", {""}, "", function()
+            log("NETWORK_PLAYER_IS_ROCKSTAR_DEV: "..NETWORK.NETWORK_PLAYER_IS_ROCKSTAR_DEV(pid), "dd")
+        end)
+
+        menu.action(pm_misc, "Remove Persistent Modder", {""}, "", function()
+            for i, rid in ipairs(PERSISTENT_MODDER_LOG) do
+                if rid == players.get_rockstar_id(pid) then
+                    table.remove(PERSISTENT_MODDER_LOG, i)
+                    log("Removed ".._name().." ("..rid..") from Persistent Modder Log.", "PERSISTENT LOG")
+                end
+            end
+        end)
+
+        menu.action(pm_misc, "IP", {""}, "", function()
+            log(player_ip(pid), "dd")
+        end)
+
+        menu.action(pm_misc, "Send SMS", {"lsms"}, "", function(click_type)
+            menu.show_command_box("lsms".._name().." ")
+        end, function(str)
+            if str == nil or str == "" then return end
+            local hdl = pid_to_handle(pid)
+            NETWORK.NETWORK_SEND_TEXT_MESSAGE(str, hdl)
+        end)
+
+    -- Remember Player
+    menu.attach_before(menu.ref_by_rel_path(menu.player_root(pid), "Teleport"), menu.action(menu.shadow_root(), "Remember Player", {"lrem", "lremember"}, "Saves the Player and their information.", function() remember_player(pid, "Manual") end))
+
+    -- PrivateModule0
+    if private_vers then
+        pmfunc_0(pm_private0, _name(), players.get_rockstar_id(pid), player_ip(pid), true, pid)
+    end
+
+end
+
+players.on_join(player)
+
+---------------------
+-- Overlay
+---------------------
+-- Overlay Opts
+--render window toggle
+render_window = false
+infoverlay = menu.attach_before(menu.ref_by_path("Players>Settings>Tags"), menu.list(menu.shadow_root(), SCRIPT_NAME.." Overlay Settings", {}, "", 
+function()
+    render_window = true 
+end, 
+function()
+    render_window = false
+end))
+
+--settings
+-- menu.action(menu.my_root(), "Players > Settings > "..SCRIPT_NAME.." Settings", {}, "Shortcut to the settings for the overlay.", function(on_click)
+--     menu.trigger_command(infoverlay)
+-- end)
+
+--set position
+menu.divider(infoverlay, "Position")
+menu.slider(infoverlay, "X:", {"overlayx"}, "Horizontal position of the info overlay.", 0, RES_X, 5, 10, function(s)
+    gui_x = s/RES_X
+end)
+menu.slider(infoverlay, "Y:", {"overlayy"}, "Vertical position of the info overlay.", 0, RES_Y, 5, 10, function(s)
+    gui_y = s/RES_Y
+end)
+
+--appearance divider
+menu.divider(infoverlay, "Appearance")
+
+--set colours
+local colours = menu.list(infoverlay, "Overlay colours", {}, "")
+
+menu.divider(colours, "Elements")
+
+menu.colour(colours, "Title Bar Colour", {"overlaytitle_bar"}, "Colour of the title bar.", colour.title_bar, true, function(on_change)
+    colour.title_bar = on_change
+end)
+menu.colour(colours, "Background Colour", {"overlaybg"}, "Colour of the background.", colour.background, true, function(on_change)
+    colour.background = on_change
+end)
+menu.colour(colours, "Health Bar Colour", {"overlayhealth_bar"}, "Colour of the health bar.", colour.health_bar, true, function(on_change)
+    colour.health_bar = on_change
+end)
+menu.colour(colours, "Armour Bar Colour", {"overlayarmour_bar"}, "Colour of the armour bar.", colour.armour_bar, true, function(on_change)
+    colour.armour_bar = on_change
+end)
+menu.colour(colours, "Map Colour", {"overlaymap"}, "Colour of the map.", colour.map, true, function(on_change)
+    colour.map = on_change
+end)
+menu.colour(colours, "Blip Colour", {"overlayblip"}, "Colour of the map blip.", colour.blip, true, function(on_change)
+    colour.blip = on_change
+end)
+
+menu.divider(colours, "Text")
+menu.colour(colours, "Name Colour", {"overlayname"}, "Colour of the player name text.", colour.name, true, function(on_change)
+    colour.name = on_change
+end)
+menu.colour(colours, "Label Colour", {"overlaylabel"}, "Colour of the label text.", colour.label, true, function(on_change)
+    colour.label = on_change
+end)
+menu.colour(colours, "Info Colour", {"overlayinfo"}, "Colour of the info text.", colour.info, true, function(on_change)
+    colour.info = on_change
+end)
+
+--set element sizing & spacing
+local element_dim = menu.list(infoverlay, "Element Sizing & Spacing", {}, "")
+
+menu.divider(element_dim, "Element Sizing & Spacing")
+
+menu.slider(element_dim, "Title Bar Height", {}, "Height of the title bar.", 0, math.floor(3 * name_h * RES_Y), math.floor(name_h * RES_Y), 1, function(on_change)
+    name_h = on_change/RES_Y
+end)
+menu.slider(element_dim, "Overlay Width", {"overlaywidth"}, "Width of the text window minus the padding.", 0, math.floor(3 * gui_w * RES_Y), math.floor(gui_w * RES_Y), 10, function(on_change)
+    gui_w = on_change/RES_Y
+end)
+menu.slider(element_dim, "Padding", {}, "Padding around the info text.", 0, math.floor(3 * padding * RES_Y), math.floor(padding * RES_Y), 1, function(on_change)
+    padding = on_change/RES_Y
+end)
+menu.slider(element_dim, "Spacing", {}, "Spacing of the different elements.", 0, math.floor(5 * spacing * RES_Y), math.floor(spacing * RES_Y), 1, function(on_change)
+    spacing = on_change/RES_Y
+end)
+menu.slider_float(element_dim, "Bar Width Multiplier", {}, "Multiplier for the width of the health and armour bar.", 0, math.floor(3 * bar_w_mult * 100), math.floor(bar_w_mult * 100), 10, function(on_change)
+    bar_w_mult = on_change/100
+end)
+menu.slider_float(element_dim, "Blip Size", {}, "Size of the map blip.", 0, math.floor(3 * blip_size * 10000), math.floor(blip_size * 10000), 1, function(on_change)
+    blip_size = on_change/10000
+end)
+
+--set text sizing & spacing
+local text_dim = menu.list(infoverlay, "Text Sizing & Spacing", {}, "")
+
+menu.divider(text_dim, "Text Sizing & Spacing")
+
+menu.slider_float(text_dim, "Name", {}, "Size of the player name text.", 0, 100, math.floor(name_size * 100), 1, function(change)
+    name_size = change / 100
+end)
+menu.slider_float(text_dim, "Info Text", {}, "Size of the info text.", 0, 100, math.floor(text_size * 100), 1, function(change)
+    text_size = change/100
+end)
+menu.slider(text_dim, "Line Spacing", {}, "Spacing inbetween lines of info text.", 0, math.floor(3 * line_spacing * RES_Y), math.floor(line_spacing * RES_Y), 1, function(on_change)
+    line_spacing = on_change/RES_Y
+end)
+
+--set border
+local border = menu.list(infoverlay, "Border", {}, "")
+
+menu.divider(border, "Border Settings")
+
+-- menu.slider(border, "Width", {}, "Width of the border rendered around the elements.", 0, math.floor(3 * spacing * RES_Y), 1, 1, function(on_change)
+--     border_width = on_change/RES_Y
+-- end)
+
+local border_c_slider = menu.colour(border, "Colour", {"overlayborder"}, "Colour of the rendered border.", colour.border, true, function(on_change)
+    colour.border = on_change
+end)
+
+border_c_slider:rainbow()
+
+--set blur
+-- menu.slider(infoverlay, "Background Blur", {}, "Amount of blur applied to background.", 0, 255, 1, 1, function(on_change)
+--     blur_strength = on_change
+-- end)

@@ -1,0 +1,543 @@
+
+-- Root Vehicle
+local vehicle_root = menu.list(menu.my_root(), "Vehicle", {"lveh"}, "Vehicle Options")
+
+-- Sub Tabs
+-----------------------
+local candyp_root = menu.list(vehicle_root, "Candy Paint", {""}, "Candy Paint options for your current vehicle.")
+local vehicle_controls = menu.list(vehicle_root, "Vehicle Controls", {"lvctrl"}, default_help)
+local vehicle_flame_tune = menu.list(vehicle_root, "Flame Tune", {""}, "")
+
+---------------------
+-- Main
+---------------------
+-- Vehicle
+
+    -- Candy Paint
+    local candyp_color = 1
+    local candyp_colors = {"#5100ff", "#00ffff", "fa00a9", "#ff0000", "#ff8400", "#1aff00", "#ffc0cb", "#000000"}
+    local candyp_cc = nil
+    menu.action(candyp_root, "Apply Candy Paint", {"lcpaint"}, "", function()
+        local lc = candyp_colors[candyp_color]
+        if candyp_cc ~= nil and candyp_cc ~= "" then
+            lc = candyp_cc
+        end
+        trigger_commands("perfwithspoiler")
+        trigger_commands("vehprimary "..lc)
+        local Chrome_Paint_Primary = menu.ref_by_path("Vehicle>Los Santos Customs>Appearance>Primary Colour>Finish>Chrome")
+        util.yield(500)
+        trigger_command(Chrome_Paint_Primary)
+        local Chrome_Paint_Secondary = menu.ref_by_path("Vehicle>Los Santos Customs>Appearance>Secondary Colour>Finish>Chrome")
+        trigger_commands("vehsecondary "..lc)
+        util.yield(500)
+        trigger_command(Chrome_Paint_Secondary)
+        trigger_commands("windowtint 1")
+        -- VEHICLE.SET_VEHICLE_NUMBER_PLATE_TEXT(vehicle, "  L_una ")
+    end)
+
+    menu.list_select(candyp_root, "Color", {""}, "", {"Purple", "Cyan", "Pink", "Red", "Orange", "Green", "Rose Gold", "Black"}, 1, function(i)
+        candyp_color = i
+    end)
+
+    menu.text_input(candyp_root, "Custom Hex Code", {"lcc"}, "Enter your own Hex Code.", function(str)
+        candyp_cc = str
+    end)
+
+    -- Vehicle Controls
+
+    menu.action(vehicle_controls,"Roll down all windows",{""},"", function(on)
+        local veh = entities.get_user_vehicle_as_handle()
+        VEHICLE.ROLL_DOWN_WINDOWS(veh)
+    end)
+
+    menu.action(vehicle_controls,"Roll up all windows",{""},"", function(on)
+        local veh = entities.get_user_vehicle_as_handle()
+        VEHICLE.ROLL_UP_WINDOW(veh,0)
+        VEHICLE.ROLL_UP_WINDOW(veh,1)
+        VEHICLE.ROLL_UP_WINDOW(veh,2)
+        VEHICLE.ROLL_UP_WINDOW(veh,3)
+    end)
+
+    menu.action(vehicle_controls, "Pop The Top", {""}, "", function()
+        VEHICLE.POP_OFF_VEHICLE_ROOF_WITH_IMPULSE(player_cur_car, 0.0, 0.0, 20.0)
+    end)
+
+    menu.action(vehicle_controls, "Instant Roof Drop/Raise", {""}, "Only works on convertibles.", function()
+        if not VEHICLE.IS_VEHICLE_A_CONVERTIBLE(player_cur_car, false) then util.stop_thread() end
+        local s = VEHICLE.GET_CONVERTIBLE_ROOF_STATE(player_cur_car)
+        if s == 0 or s == 3 then
+            VEHICLE.LOWER_CONVERTIBLE_ROOF(player_cur_car, true)
+        elseif s == 2 or s == 1 then
+            VEHICLE.RAISE_CONVERTIBLE_ROOF(player_cur_car, true)
+        end
+    end)
+
+    menu.action(vehicle_controls, "Pop Out Windscreen", {""}, "", function()
+        VEHICLE.POP_OUT_VEHICLE_WINDSCREEN(player_cur_car)
+    end)
+
+    vehicle_controls_heli = menu.list(vehicle_controls, "Heli", {""}, "")
+
+    menu.slider_float(vehicle_controls_heli, "Thrust", {"helithrust"}, "Set the Heli thrust.", 0, 1000, 220, 10, function(value)
+        if PED.IS_PED_IN_ANY_HELI(players.user_ped()) then
+            local CHandlingData = entities.vehicle_get_handling(entities.get_user_vehicle_as_pointer())
+            local CflyingHandling = entities.handling_get_subhandling(CHandlingData, 1)
+            if CflyingHandling then
+                memory.write_float(CflyingHandling + 0x8, value * 0.01)
+            end
+        end
+    end)
+
+    menu.action(vehicle_controls_heli, "Better Heli Mode", {"betterheli"}, "Disabables Heli auto stablization.", function()
+        if PED.IS_PED_IN_ANY_HELI(players.user_ped()) then
+            local CHandlingData = entities.vehicle_get_handling(entities.get_user_vehicle_as_pointer())
+            local CflyingHandling = entities.handling_get_subhandling(CHandlingData, 1)
+            for better_heli_offsets as offsets do
+                if CflyingHandling then
+                    memory.write_float(CflyingHandling + offsets, 0)
+                end
+            end
+        end
+    end)
+
+    menu.toggle(vehicle_controls_heli, "Enable Cargobob Pickup Magnet", {""}, "", function(on)
+        VEHICLE.CREATE_PICK_UP_ROPE_FOR_CARGOBOB(player_cur_car, 1)
+        VEHICLE.SET_CARGOBOB_PICKUP_MAGNET_ACTIVE(player_cur_car, on)
+        VEHICLE.SET_CARGOBOB_PICKUP_MAGNET_STRENGTH(player_cur_car, 5000.0)
+        VEHICLE.SET_CARGOBOB_PICKUP_MAGNET_REDUCED_STRENGTH(player_cur_car, 5000.0)
+        VEHICLE.SET_CARGOBOB_PICKUP_MAGNET_FALLOFF(player_cur_car, 0)
+        VEHICLE.SET_CARGOBOB_PICKUP_MAGNET_REDUCED_FALLOFF(player_cur_car, 0)
+        -- VEHICLE.SET_CARGOBOB_PICKUP_MAGNET_PULL_STRENGTH(player_cur_car, 100.0)
+        log("Is active: "..VEHICLE.DOES_CARGOBOB_HAVE_PICKUP_MAGNET(player_cur_car), "Debug")
+    end)
+
+    -- Flame Tune
+
+    --#nitrous
+    local ndurationMod = 1.0
+    vehicle_flame_tune:slider_float("Duration", {"lnduration"}, "The amount of seconds that the nitrous will last.", 100, 1000, 300, 50, function(value)
+        ndurationMod = value/300 -- this seems to be the exact conversion for converting the float to seconds
+        --notify(value/300)
+    end)
+
+    local npowerMod = 1.5
+    vehicle_flame_tune:slider_float("Power Multiplier", {"lnmultiplier"}, "", 100, 1000, 150, 50, function(value)
+        npowerMod = value/100
+    end)
+
+    local nrechargeMod = 2.0
+    vehicle_flame_tune:slider_float("Recharge Time", {"lnrechargetime"}, "Note: The recharge speed may change based on the duration.", 100, 1000, 200, 50, function(value)
+        nrechargeMod = value/100
+    end)
+
+    vehicle_flame_tune:toggle("Use Horn Button For Nitrous", {}, "", function(toggled)
+        VEHICLE._SET_VEHICLE_USE_HORN_BUTTON_FOR_NITROUS(toggled)
+    end)
+
+    vehicle_flame_tune:toggle_loop("Disable On Key Release", {}, "Disables nitrous when you let go of the W key.", function()
+        if PAD.IS_CONTROL_JUST_RELEASED(0, 71) and VEHICLE.IS_NITROUS_ACTIVE(player_cur_car) then
+            VEHICLE.SET_OVERRIDE_NITROUS_LEVEL(player_cur_car, false, ndurationMod, npowerMod, nrechargeMod, false) -- SET_NITROUS_IS_ACTIVE didnt wanna work here cus gay
+        end
+    end)
+
+    vehicle_flame_tune:toggle_loop("Disable In Air", {}, "", function()
+        if ENTITY.IS_ENTITY_IN_AIR(player_cur_car) then
+            VEHICLE.SET_OVERRIDE_NITROUS_LEVEL(player_cur_car, false, ndurationMod, npowerMod, nrechargeMod, false) -- SET_NITROUS_IS_ACTIVE didnt wanna work here cus gay
+        end
+    end)
+
+
+    local nitrousPtfxActive = false
+    vehicle_flame_tune:action("Load PTFX For Nearby Players", {"lloadnitrousptfx"}, "Loads the nitrous PTFX for nearby players so that they can also see the flames.", function() 
+        request_ptfx_asset("veh_xs_vehicle_mods")
+        GRAPHICS.USE_PARTICLE_FX_ASSET("veh_xs_vehicle_mods")
+        if nitrousPtfxActive then
+            notify("This is already active, please wait...")
+            return
+        end
+        ptfx = GRAPHICS.START_NETWORKED_PARTICLE_FX_LOOPED_ON_ENTITY("veh_nitrous", player_cur_car, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, false, false, false, 0, 0, 0, 255)
+        nitrousPtfxActive = true
+        if !is_starting then notify("Loading PTFX...") end
+        wait(5000)
+        GRAPHICS.REMOVE_PARTICLE_FX(ptfx)
+        nitrousPtfxActive = false
+    end)
+
+
+    local clearedNitrous = false
+    local loadedntrptfx = false
+    nitrousTgl = vehicle_flame_tune:toggle_loop("Enable Nitrous", {"lnitrous"}, "Default Nitrous button is X.", function()
+        if !loadedntrptfx then
+            trigger_commands("lloadnitrousptfx")
+            loadedntrptfx = true
+        end
+        if VEHICLE.GET_HAS_ROCKET_BOOST(player_cur_car) then return end
+        if not clearedNitrous then
+            VEHICLE.CLEAR_NITROUS(player_cur_car) -- clearing nitrous on feature startup because the bar doesn't go down if enabled while full.
+            clearedNitrous = true
+            return
+        else
+            request_ptfx_asset("veh_xs_vehicle_mods")
+            VEHICLE.SET_OVERRIDE_NITROUS_LEVEL(player_cur_car, true, ndurationMod, npowerMod, nrechargeMod, false)
+            if not VEHICLE.IS_NITROUS_ACTIVE(player_cur_car) then
+                VEHICLE.SET_NITROUS_IS_ACTIVE(player_cur_car, false) -- disable the nitrous ptfx when not active, removing the ptfx still left the lights from the ptfx behind
+                return
+            end
+        end
+    end, function()
+        VEHICLE.SET_OVERRIDE_NITROUS_LEVEL(player_cur_car, false, 0.0, 0.0, 0.0, false)
+        clearedNitrous = false
+        loadedntrptfx = false
+    end)
+
+    flamethrowerTune = vehicle_flame_tune:list("Flamethrower Tune", {}, "")
+    ftredline = flamethrowerTune:toggle_loop("On Redline", {}, "", function()
+        if not nitrousTgl.value then 
+            notify("Please enable nitrous to use this feature. :/")
+            ftredline.value = false
+            return
+        end
+        request_ptfx_asset("veh_xs_vehicle_mods")
+        local vehPtr = entities.get_user_vehicle_as_pointer()
+        local vehHandle = player_cur_car
+        if vehPtr == 0 then return end
+        VEHICLE.SET_NITROUS_IS_ACTIVE(vehHandle, entities.get_rpm(vehPtr) == 1.0 and entities.get_current_gear(vehPtr) == 1)
+    end)
+
+    ftds_prevgear = 0
+    ftdownshift = flamethrowerTune:toggle_loop("On Downshift", {}, "", function()
+        if not nitrousTgl.value then 
+            notify("Please enable nitrous to use this feature. :/")
+            ftdownshift.value = false
+            return
+        end
+        request_ptfx_asset("veh_xs_vehicle_mods")
+        local vehPtr = entities.get_user_vehicle_as_pointer()
+        local vehHandle = player_cur_car
+        if vehPtr == 0 then return end
+        if entities.get_current_gear(vehPtr) < ftds_prevgear then
+            for i = 1, 25 do
+                VEHICLE.SET_NITROUS_IS_ACTIVE(vehHandle, true)
+                wait()
+            end
+        end
+        ftds_prevgear = entities.get_current_gear(vehPtr)
+    end)
+
+    ftus_prevgear = 0
+    ftupshift = flamethrowerTune:toggle_loop("On Upshift", {}, "", function()
+        if not nitrousTgl.value then 
+            notify("Please enable nitrous to use this feature. :/")
+            ftupshift.value = false
+            return
+        end
+        request_ptfx_asset("veh_xs_vehicle_mods")
+        local vehPtr = entities.get_user_vehicle_as_pointer()
+        local vehHandle = player_cur_car
+        if vehPtr == 0 then return end
+        if entities.get_current_gear(vehPtr) > ftus_prevgear then
+            for i = 1, 25 do
+                VEHICLE.SET_NITROUS_IS_ACTIVE(vehHandle, true)
+                wait()
+            end
+        end
+        ftus_prevgear = entities.get_current_gear(vehPtr)
+    end)
+
+    ftaccelrating = flamethrowerTune:toggle_loop("While Accelerating", {}, "", function()
+        if not nitrousTgl.value then 
+            notify("Please enable nitrous to use this feature. :/")
+            ftaccelrating.value = false
+            return
+        end
+        request_ptfx_asset("veh_xs_vehicle_mods")
+        VEHICLE.SET_NITROUS_IS_ACTIVE(player_cur_car, PAD.IS_CONTROL_PRESSED(0, 71))
+    end)
+
+    ftalwaysOn = flamethrowerTune:toggle_loop("Always On", {}, "", function()
+        if not nitrousTgl.value then 
+            notify("Please enable nitrous to use this feature. :/")
+            ftalwaysOn.value = false
+            return
+        end
+        request_ptfx_asset("veh_xs_vehicle_mods")
+        VEHICLE.SET_NITROUS_IS_ACTIVE(player_cur_car, true)
+    end)
+
+    flamethrowerTune:action("Load PTFX For Nearby Players", {}, "Loads the nitrous PTFX for nearby players so that they can also see the flames.", function() 
+        trigger_commands("lloadnitrousptfx")
+    end)
+
+    -- Ghost Rider
+    menu.action(vehicle_root, "Ghost Rider", {""}, "", function()
+        local start_veh = player_cur_car
+        menu.ref_by_path("Stand>Lua Scripts>Addict>Fun Shit>Menyoo>Vehicles>All vehicles>Realistic ghost rider motorbike.xml"):trigger()
+        menu.ref_by_rel_path(menu.my_root(), "Self>On Fire"):trigger()
+        while start_veh != player_cur_car do wait() end
+        NETWORK.NETWORK_EXPLODE_VEHICLE(start_veh, true, false, 0)
+    end)
+
+    -- Vehicle Ghost Godmode
+    veh_ghostgod_prev = -1
+    menu.toggle_loop(vehicle_root, "Ghost God", {""}, "I can't believe it's not Detectable!\nYou will be invincible to everything, except explosions from yourself. *Can't disable this for vehicles*", function()
+        if player_cur_car != veh_ghostgod_prev then
+            ENTITY.SET_ENTITY_CAN_ONLY_BE_DAMAGED_BY_ENTITY(player_cur_car, player_cur_car)
+            notify("Ghost Godmode Enabled!")
+            veh_ghostgod_prev = player_cur_car
+        end
+    end)
+
+    -- No Visible Damage
+    menu.toggle_loop(vehicle_root, "Better Perm Mint", {""}, "An improved version of Stand's \"Permanent Mint Condition\" feature.", function()
+        VEHICLE.SET_VEHICLE_CAN_BE_VISIBLY_DAMAGED(player_cur_car, false)
+        VEHICLE.SET_DONT_PROCESS_VEHICLE_GLASS(player_cur_car, true)
+        VEHICLE.SET_VEHICLE_STRONG(player_cur_car, true)
+        GRAPHICS.REMOVE_DECALS_FROM_VEHICLE(player_cur_car)
+    end, function()
+        VEHICLE.SET_VEHICLE_CAN_BE_VISIBLY_DAMAGED(player_cur_car, true)
+        VEHICLE.SET_DONT_PROCESS_VEHICLE_GLASS(player_cur_car, false)
+        VEHICLE.SET_VEHICLE_STRONG(player_cur_car, false)
+    end)
+
+    -- Vehicle Proofs
+    veh_proofs = menu.list(vehicle_root, "Proofs", {""}, "")
+
+        -- Bullet
+        menu.toggle_loop(veh_proofs, "Bullet Proof", {""}, "", function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 1, true)
+        end, function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 1, false)
+        end)
+
+        -- Fire
+        menu.toggle_loop(veh_proofs, "Fire Proof", {""}, "", function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 2, true)
+        end, function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 2, false)
+        end)
+
+        -- Explosion
+        menu.toggle_loop(veh_proofs, "Explosion Proof", {""}, "", function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 3, true)
+        end, function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 3, false)
+        end)
+
+        -- Collision
+        menu.toggle_loop(veh_proofs, "Collision Proof", {""}, "", function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 4, true)
+        end, function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 4, false)
+        end)
+
+        -- Melee
+        menu.toggle_loop(veh_proofs, "Melee Proof", {""}, "", function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 5, true)
+        end, function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 5, false)
+        end)
+
+        -- Steam
+        menu.toggle_loop(veh_proofs, "Steam Proof", {""}, "", function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 6, true)
+        end, function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 6, false)
+        end)
+
+        -- Water
+        menu.toggle_loop(veh_proofs, "Water Proof", {""}, "", function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 7, true)
+        end, function()
+            set_ent_proofs(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), 7, false)
+        end)
+
+    -- Shift to Drift
+    menu.toggle_loop(vehicle_root, "Hold Shift to Drift", {"lshtd"}, "Yes.", function()
+        if PAD.IS_CONTROL_PRESSED(21, 21) then
+            VEHICLE.SET_VEHICLE_REDUCE_GRIP(player_cur_car, true)
+            VEHICLE.SET_VEHICLE_REDUCE_GRIP_LEVEL(player_cur_car, 0.0)
+        else
+            VEHICLE.SET_VEHICLE_REDUCE_GRIP(player_cur_car, false)
+        end
+    end)
+
+    -- Caps For Rocket Boost
+    hold_caps_rocketboost_on = false
+    downforce_cmd = menu.ref_by_path("Vehicle>Movement>Handling Editor>Base>DownforceModifier")
+    caps_for_rocket_prev_downforce = 0.0
+    menu.toggle_loop(vehicle_root, "Hold Caps For Rocket Boost", {""}, "", function()
+        if not hold_caps_rocketboost_on then
+            caps_for_rocket_prev_downforce = downforce_cmd.value
+            hold_caps_rocketboost_on = true
+        end
+        if PED.IS_PED_IN_VEHICLE(players.user_ped(), player_cur_car, false) then
+            if PAD.IS_CONTROL_PRESSED(137, 137) then
+                local dict = "veh_thruster"
+                local ptfx = "veh_xm_thruster_jet"
+                local c = ENTITY.GET_ENTITY_COORDS(players.user_ped(), false)
+                local rot = ENTITY.GET_ENTITY_ROTATION(player_cur_car, 5)
+                local pc = ENTITY.GET_ENTITY_BONE_POSTION(player_cur_car, ENTITY.GET_ENTITY_BONE_INDEX_BY_NAME(player_cur_car, "platelight"))
+                downforce_cmd.value = 1000000
+                while not STREAMING.HAS_NAMED_PTFX_ASSET_LOADED(dict) do
+                    STREAMING.REQUEST_NAMED_PTFX_ASSET(dict)
+                    wait()
+                end
+                GRAPHICS.USE_PARTICLE_FX_ASSET(dict)
+                GRAPHICS.START_NETWORKED_PARTICLE_FX_NON_LOOPED_AT_COORD(ptfx, pc.x, pc.y, pc.z, rot.x, rot.y, rot.z, 0.0, true, true, true, false)
+                VEHICLE.SET_VEHICLE_FORWARD_SPEED(player_cur_car, ENTITY.GET_ENTITY_SPEED(player_cur_car) * 1.01)
+                -- FIRE.ADD_OWNED_EXPLOSION(players.user_ped(), c.x, c.y, c.z, 3, 0.0, false, false, 0.0)
+            else
+                downforce_cmd.value = caps_for_rocket_prev_downforce
+            end
+        end
+    end, function()
+        downforce_cmd.value = caps_for_rocket_prev_downforce
+        hold_caps_rocketboost_on = false
+    end)
+
+    -- Invisible on exit
+    menu.toggle_loop(vehicle_root, "Invisible on exit", {""}, "Sets your vehicle invisible on exit. Visible only for you when distance < 15 from it.\nCan sometimes not show after being in an interior for too long.", function()
+        if not PED.IS_PED_IN_ANY_VEHICLE(players.user_ped(), false) then
+            ENTITY.SET_ENTITY_VISIBLE(player_cur_car, false, 0)
+            NETWORK.SET_ENTITY_LOCALLY_VISIBLE(player_cur_car)
+            local cpos = ENTITY.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(player_cur_car, 0, 0, 1)
+            local ppos = ENTITY.GET_ENTITY_COORDS(players.user_ped(), false)
+            local scale = 1.0
+            local ioealpha = 159 --[[or try 207]]
+            GRAPHICS.DRAW_MARKER(36, cpos.x, cpos.y, cpos.z, 0, 0, 0, 0, 0, 0, scale, scale, scale, 255, 255, 255, ioealpha, true, true, 2, false, 0, 0, false)
+            if MISC.GET_DISTANCE_BETWEEN_COORDS(cpos.x, cpos.y, cpos.z, ppos.x, ppos.y, ppos.z, false) < 15 then
+                ENTITY.SET_ENTITY_ALPHA(player_cur_car, 87)
+            else
+                ENTITY.SET_ENTITY_ALPHA(player_cur_car, 0)
+            end
+            if entities.get_can_migrate(player_cur_car) then entities.set_can_migrate(player_cur_car, false) end
+        else
+            -- ENTITY.SET_ENTITY_ALPHA(player_cur_car, 255)
+            ENTITY.RESET_ENTITY_ALPHA(player_cur_car)
+            ENTITY.SET_ENTITY_VISIBLE(player_cur_car, true, 0)
+            if not entities.get_can_migrate(player_cur_car) then entities.set_can_migrate(player_cur_car, true) end
+        end
+    end, function()
+        -- ENTITY.SET_ENTITY_ALPHA(player_cur_car, 255)
+        ENTITY.RESET_ENTITY_ALPHA(player_cur_car)
+        ENTITY.SET_ENTITY_VISIBLE(player_cur_car, true, 0)
+    end)
+
+    -- Disable Godmode on exit
+    menu.toggle_loop(vehicle_root, "Disable Godmode on exit", {""}, "", function()
+        if not ENTITY.GET_ENTITY_CAN_BE_DAMAGED(entities.get_user_vehicle_as_handle()) then
+            if not PED.IS_PED_IN_ANY_VEHICLE(players.user_ped(), false) then
+                ENTITY.SET_ENTITY_CAN_BE_DAMAGED(PED.GET_VEHICLE_PED_IS_IN(players.user_ped(), true), true)
+            end
+        end
+    end)
+
+    -- Explode Other Vehicles on Contact
+    menu.toggle_loop(vehicle_root, "Explode Other Vehicles on Contact", {""}, "Go ahead, be a dick.", function()
+        local exp_veh_on_c_cmd = menu.ref_by_rel_path(menu.player_root(players.user()), "Friendly / Neutral>Vehicle>Explode Other Vehicles on Contact")
+        if readyInSession() then
+            exp_veh_on_c_cmd.value = true
+        end
+    end, function()
+        local exp_veh_on_c_cmd = menu.ref_by_rel_path(menu.player_root(players.user()), "Friendly / Neutral>Vehicle>Explode Other Vehicles on Contact")
+        exp_veh_on_c_cmd.value = false
+    end)
+
+    menu.toggle(vehicle_root, "Test Anim", {""}, "", function(on)
+        local dict = "creatures@dog@move"
+        local anim = "sprint"
+        RequestAnimation(dict)
+        if on then
+            TASK.TASK_VEHICLE_PLAY_ANIM(player_cur_car, dict, anim)
+        else
+            TASK.STOP_ANIM_TASK(player_cur_car, dict, anim, 0)
+        end
+    end)
+
+    -- Ghost Vehicle
+    menu.toggle_loop(vehicle_root, "Ghost", {""}, "", function()
+        local veh = VEHICLE.GET_LAST_DRIVEN_VEHICLE()
+        if ENTITY.DOES_ENTITY_EXIST(veh) then
+            NETWORK.SET_NETWORK_VEHICLE_AS_GHOST(veh, true)
+        end
+    -- We dont need to check 1000 times a second. 10 is fine.
+    wait(100) end, function()
+        local veh = VEHICLE.GET_LAST_DRIVEN_VEHICLE()
+        if ENTITY.DOES_ENTITY_EXIST(veh) then
+            NETWORK.SET_NETWORK_VEHICLE_AS_GHOST(veh, false)
+        end
+    end)
+
+    -- Disable Siren Sound
+    menu.toggle_loop(vehicle_root, "Disable Siren Audio", {""}, "*Locally*", function()
+        if ENTITY.DOES_ENTITY_EXIST(player_cur_car) then
+            VEHICLE.SET_VEHICLE_HAS_MUTED_SIRENS(player_cur_car, true)
+        end
+        -- We dont need to check 1000 times a second. 10 is fine.
+    wait(100) end, function()
+        if ENTITY.DOES_ENTITY_EXIST(player_cur_car) then
+            VEHICLE.SET_VEHICLE_HAS_MUTED_SIRENS(player_cur_car, false)
+        end
+    end)
+
+    -- Special Siren Toggle
+    spec_siren_type = false
+    spec_siren = menu.list(vehicle_root, "Special Siren", {""}, "")
+    menu.toggle(spec_siren, "Toggle Special Lights", {""}, "For menyoo vehicles", function(on)
+        if readyInSession() and player_cur_car != -1 and !shadow_starting and !is_stopping then
+            local dist = 5
+            if spec_siren_type then dist = 100 end
+            local all_vehicles = entities.get_all_vehicles_as_pointers()
+            local player_cur_car_ptr = entities.get_user_vehicle_as_pointer()
+            for _, veh in ipairs(all_vehicles) do
+                if veh != player_cur_car_ptr and v3.distance(entities.get_position(player_cur_car_ptr), entities.get_position(veh)) < dist then
+                    local veh_hdl = entities.pointer_to_handle(veh)
+                    if VEHICLE.GET_VEHICLE_CLASS(veh_hdl) == 18 then
+                        VEHICLE.SET_VEHICLE_SIREN(veh_hdl, on)
+                    end
+                end
+            end
+        end
+    end)
+
+    menu.toggle(spec_siren, "Include Nearby", {""}, "", function(on)
+        spec_siren_type = on
+    end)
+
+    menu.action(vehicle_root, "Set Wheelie Enabled", {""}, "Does NOT work on all vehicles.", function()
+        VEHICLE.SET_WHEELIE_ENABLED(player_cur, true, true)
+    end)
+
+    -- Set Exclusive Driver
+    menu.action(vehicle_root, "Set Exclusive Driver", {""}, "Sets you as the exclusive driver of your current vehicle.", function()
+        local vehicle = PED.GET_VEHICLE_PED_IS_USING(players.user_ped())
+        local sed_lv = 1
+        if not ENTITY.DOES_ENTITY_EXIST(vehicle) then
+            vehicle = VEHICLE.GET_LAST_DRIVEN_VEHICLE()
+            sed_lv = 2
+            if not ENTITY.DOES_ENTITY_EXIST(vehicle) then
+                notify("Get your ass in a vehicle first :)")
+                util.stop_thread()
+            end
+        end
+        local outptr = memory.alloc(4)
+        if VEHICLE.IS_PED_EXCLUSIVE_DRIVER_OF_VEHICLE(players.user_ped(), vehicle, outptr) then
+            local index = memory.read_int(outptr)
+            notify("You are already the exclusive driver of this vehicle.\nIndex: "..index)
+        else
+            VEHICLE.SET_VEHICLE_EXCLUSIVE_DRIVER(vehicle, players.user_ped(), 1)
+            local sed_lv_str = {"your current vehicle", "your last driven vehicle."}
+            notify("Set you as the exclusive driver of "..sed_lv_str[sed_lv])
+        end
+    end)
+
+    saved_menyoo = menu.list(vehicle_root, "Saved Menyoo", {""}, "")
+
+    menu.action(saved_menyoo, "T20 Police", {"lt20"}, "", function()
+        local ref = menu.ref_by_path("Stand>Lua Scripts>Addict>Fun Shit>Menyoo>Vehicles>All vehicles>T20 Police.xml")
+        if ref:isValid() then
+            ref:trigger()
+        else
+            notify("Faied to get Menyoo Vehicle (do you have addict script running?).")
+        end
+    end)

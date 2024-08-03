@@ -1,0 +1,1512 @@
+-- Event Handlers
+
+players.on_join(function(pid)
+    names[pid] = players.get_name(pid)
+    rids[pid] = players.get_rockstar_id(pid)
+    ips[pid] = player_ip(pid)
+    Jointimes[pid] = os.clock()
+    player_kills_log[pid] = 0
+
+    if isPersistentModder(rids[pid]) then
+        if !IsDetectionPresent(pid, PERSISTENT_MODDER_CLASSIFICATION) then
+            players.add_detection(pid, PERSISTENT_MODDER_CLASSIFICATION, 7, 100)
+        end
+    end
+
+    if dt_chrx_opt then
+        if isChrxUser(pid) then dt_chrx_handle(pid) end
+    end
+
+    if is_starting then goto on_join_on_start end
+    if players.is_marked_as_modder(pid) then addModderLog(rids[pid], names[pid]) end
+    if readyInSession() then
+        if players.get_host() == players.user() then
+            if block_joins_spoofed_token and pid != players.user() then
+                if HasSpoofedToken(pid) then
+                    if block_joins_spoofed_token_excl_stand then
+                        if #bj_spoofed_token_isnt_standuser_or_already_blocked ~= 0 then
+                            for bj_spoofed_token_isnt_standuser_or_already_blocked as rid do
+                                if rid == rids[pid] then goto alreadyblocked end
+                            end
+                        end
+                        wait(6450)
+                        if StandUser(pid, block_joins_spoofed_token_excl_cl) then goto on_join_on_start end
+                    end
+                    ::alreadyblocked::
+                    bj_spoofed_token_isnt_standuser_or_already_blocked[#bj_spoofed_token_isnt_standuser_or_already_blocked + 1] = rids[pid]
+                    notify("Xcript:\nBlocked Join (Spoofed Host Token) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")")
+                    log("Blocked Join (Spoofed Host Token) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")", "Block Join")
+                    kick(pid, block_joins_spoofed_token_type)
+                    if block_joins_spoofed_token_type == -1 then temp_block_all_join_requests() end
+                    return
+                end
+            end
+        
+            if block_joins_from_relay and pid != players.user() then
+                if ips[pid] == "Connected to Relay" or ips[pid] == "255.255.255.255" then
+                    notify("Xcript:\nBlocked Join (Connected to Relay) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")")
+                    log("Blocked Join (Connected to Relay) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")", "Block Join")
+                    kick(pid, -1)
+                    temp_block_all_join_requests()
+                    return
+                end
+            end
+
+            if block_joins_from_vpn and pid != players.user() then
+                if players.is_using_vpn(pid) then
+                    notify("Xcript:\nBlocked Join (Using VPN) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")")
+                    log("Blocked Join (Using VPN) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")", "Block Join")
+                    kick(pid, -1)
+                    temp_block_all_join_requests()
+                    return
+                end
+            end
+        end
+
+        if IsPlayerRemembered(names[pid], rids[pid]) then
+            if on_remembered_player_join(pid, names[pid]) then return end
+        end
+    else
+        if IsPlayerRemembered(names[pid], rids[pid]) then
+            if !IsDetectionPresent(pid, "Remembered") then
+                players.add_detection(pid, "Remembered", 7, 0)
+            end
+            log("A Remembered Player is in this session: "..names[pid].." ("..rids[pid]..")")
+            notify("A Remembered Player is in this session: "..names[pid].." ("..rids[pid]..")")
+        end
+    end
+
+    if geo_loc_check(pid, ips[pid]) then
+        if dev_vers then log("Was Kicked", "dd") end
+        return
+    end -- We dont want to use more budget if they get kicked anyways (or if were restarting the script)
+
+    ::on_join_on_start::
+
+    hostq[pid] = players.get_host_queue_position(pid)
+    allplayers[pid] = NETWORK.NETWORK_GET_NUM_CONNECTED_PLAYERS()
+
+    if readyInSession() then
+        if opt_join_react_no_undisc and names[pid] == "UndiscoveredPlayer" then goto undiscovered end
+        if names[pid] == nil or names[pid] == "" then goto undiscovered end
+        if showJoinInfomsg then
+            notify(names[pid].." is joining..\nSlot: "..pid.."\nRID/SCID: "..rids[pid].."\nIPv4: "..ips[pid])
+        end
+        if showJoinInfolog then
+            log(names[pid].." (Slot:"..pid.." | HQ:#"..hostq[pid].." | Count:"..allplayers[pid].." | RID:"..rids[pid].." | IPv4:"..ips[pid]..")", "Join")
+        end
+        if showJoinInfoteam then
+            chat.send_message("> "..names[pid].." (Slot:"..pid.." | HQ:#"..hostq[pid].." | Count:"..allplayers[pid].." | RID:"..rids[pid].." | IPv4:"..ips[pid]..") is joining.", true, true, true)
+        end
+        if showJoinInfoall then
+            chat.send_message("> "..names[pid].." (Slot:"..pid.." | HQ:#"..hostq[pid].." | Count:"..allplayers[pid].." | RID:"..rids[pid].." | IPv4:"..ips[pid]..") is joining.", false, true, true)
+        end
+        ::undiscovered::
+    end
+end)
+
+players.on_leave(function(pid)
+    local time_str = ""
+    local time_in_session = 0
+    notif_on_afsu[pid] = nil
+    players_last_veh[pid] = nil
+    if opt_leave_react_no_undisc and names[pid] == "UndiscoveredPlayer" then goto undiscovered end
+    if showleaveInfomsg then
+        if names[pid] ~= nil then
+            notify(names[pid].." left.")
+        end
+    end
+    if Jointimes[pid] != nil then
+        time_in_session = math.floor(os.clock()-Jointimes[pid]+0.5)
+        if time_in_session > 60 then
+            time_in_session = math.floor((os.clock()-Jointimes[pid])/60)
+            time_str = time_in_session.."m"
+        else
+            time_str = time_in_session.."s"
+        end
+    else
+        time_str = "?"
+    end
+    if showleaveInfolog then
+        log(names[pid].." (RID: "..rids[pid].." | IPv4: "..ips[pid].." | #: "..NETWORK.NETWORK_GET_NUM_CONNECTED_PLAYERS().." | "..time_str..")", "Leave")
+    end
+    if showleaveInfoteam then
+        chat.send_message("> "..names[pid].." left. (RID: "..rids[pid].." | IPv4: "..ips[pid].." | #: "..NETWORK.NETWORK_GET_NUM_CONNECTED_PLAYERS().." | "..time_str..")", true, true, true)
+    end
+    if showleaveInfoall then
+        chat.send_message("> "..names[pid].." left. (RID: "..rids[pid].." | IPv4: "..ips[pid].." | #: "..NETWORK.NETWORK_GET_NUM_CONNECTED_PLAYERS().." | "..time_str..")", false, true, true)
+    end
+    ::undiscovered::
+    if pid == players.user() or names[pid] == PLAYER_USERNAME then
+        ON_NEW_SESSION()
+    end
+    wait(10)
+    recentsh[pid] = nil
+    Jointimes[pid] = nil
+    names[pid] = nil
+    rids[pid] = nil
+    ips[pid] = nil
+    allplayers[pid] = nil
+    portal_player_lasttp[pid] = nil
+    PLAYERS_INTERIOR_TIMES[pid] = nil
+    player_kills_log[pid] = nil
+
+    if #PLAYERS_INTERIOR_KICK > 0 then
+        for i = 1, #PLAYERS_INTERIOR_KICK do
+            if PLAYERS_INTERIOR_KICK[i] == pid then PLAYERS_INTERIOR_KICK[i] = nil end
+        end
+    end
+
+    if purge_list[pid] ~= nil then
+        menu.delete(purge_list[pid])
+        purge_list[pid] = nil
+    end
+end)
+
+util.on_transition_finished(function()
+    if dev_vers then log("Transition Finished.", "d") end
+    if !IS_NEW_SESSION then
+        ON_NEW_SESSION()
+    end
+    IS_NEW_SESSION = false
+end)
+
+chat.on_message(function(sender, reserved, text, team_chat, networked, is_auto)
+    if sender == players.user() then return end
+    -- if not networked then return end
+    if vfp_ip then
+        if text == "!t" then
+            vfp_based[#vfp_based + 1] = players.get_name(sender)
+        elseif text == "!b" then
+            vfp_retard[#vfp_retard + 1] = players.get_name(sender)
+        end
+    end
+
+    if purge_modders_vote_session then
+        if players.is_marked_as_modder(sender) or string.find(players.get_tags_string(sender), "-") ~= nil then
+            goto pmvs_skip
+        end
+        if is_item_in_list(players.get_name(sender), purge_v) then
+            goto pmvs_skip
+        end
+        if text == "y" or text == "Y" then
+            purge_v_y += 1
+            purge_v[#purge_v + 1] = players.get_name(sender)
+        elseif text == "n" or text == "N" then
+            purge_v_n += 1
+            purge_v[#purge_v + 1] = players.get_name(sender)
+        end
+        ::pmvs_skip::
+    end
+
+    -- local ask_for_money_phrases = {"money drop", "give money", "give me money", "drop money"}
+    if asking_for_money_opt ~= 1 then
+        local ltxt = string.lower(text)
+        local c1 = false
+        local c2 = false
+        local c3 = false
+        local c4 = false
+        local c5 = false
+        local c6 = false
+        local is_asking = false
+        if string.find(ltxt, "money") ~= nil then c1 = true end
+        if string.find(ltxt, "drop") ~= nil then c2 = true end
+        if string.find(ltxt, "give") ~= nil then c3 = true end
+        if string.find(ltxt, "can") ~= nil then c4 = true end
+        if string.find(ltxt, "you") ~= nil then c5 = true end
+        if string.find(ltxt, "a modder") ~= nil then c5 = true end
+        if string.find(ltxt, "someone") ~= nil then c5 = true end
+        if string.find(ltxt, "modder") ~= nil then c6 = true end
+        if string.find(ltxt, "money pls") ~= nil then is_asking = true end
+        if c1 and c2 then is_asking = true end
+        if c1 and c3 then is_asking = true end
+        if c2 and c3 then is_asking = true end
+        if c2 and c4 and c5 then is_asking = true end
+        if c1 and c3 and c4 and c5 then is_asking = true end
+        if c2 and c6 then is_asking = true end
+        
+        if is_asking then
+            local pname = players.get_name(sender)
+            local stxt = ""
+            local ask_for_money_warntxt = "> "..pname..", this is your 1 and only warning, as well as the rest of the lobby. Asking for money will result in a kick."
+            if players.get_host() == players.user() then
+                stxt = pname.." was kicked"
+            else
+                stxt = "kicking "..pname
+            end
+            local ask_for_money_kicktxt = "> "..stxt.." | Reason: Asking for money."
+            local ask_fm_warn_notif = "> "..pname.." was warned. | Reason: Asking for money."
+            pluto_switch asking_for_money_opt do
+                case 2:
+                    kick(sender, 2, "Asked for money")
+                    log(ask_for_money_kicktxt, "Chat Punishments")
+                    notify(ask_for_money_kicktxt)
+                    break
+                case 3:
+                    if asking_for_money_has_warned == false then
+                        msg(ask_for_money_warntxt, false, true, true)
+                        asking_for_money_has_warned = true
+                        log(ask_fm_warn_notif, "Chat Punishments")
+                        notify(ask_fm_warn_notif)
+                    else
+                        kick(sender, 2, "Asked for money")
+                        log(ask_for_money_kicktxt, "Chat Punishments")
+                        notify(ask_for_money_kicktxt)
+                    end
+                    break
+                case 4:
+                    msg(ask_for_money_kicktxt, false, true, true)
+                    kick(sender, 2, "Asked for money")
+                    log(ask_for_money_kicktxt, "Chat Punishments")
+                    notify(ask_for_money_kicktxt)
+                    break
+                case 5:
+                    if asking_for_money_has_warned == false then
+                        msg(ask_for_money_warntxt, false, true, true)
+                        asking_for_money_has_warned = true
+                        log(ask_fm_warn_notif, "Chat Punishments")
+                        notify(ask_fm_warn_notif)
+                    else
+                        msg(ask_for_money_kicktxt, false, true, true)
+                        kick(sender, 2, "Asked for money")
+                        log(ask_for_money_kicktxt, "Chat Punishments")
+                        notify(ask_for_money_kicktxt)
+                    end
+                    break
+            end
+        end
+    end
+
+    if posting_userip_opt ~= 1 then
+        local ltxt = string.lower(text)
+        local postedip = false
+        if string.find(ltxt, tostring(ips[players.user()])) ~= nil then postedip = true end
+        if postedip then
+            log("Removing: "..sender.." | Reason: Posted your IPv4 in chat.", "Chat punishments")
+            pluto_switch posting_userip_opt do
+                case 2:
+                    kick(sender, 0, "Sent your IP (chat)")
+                    break
+                case 3:
+                    kick(sender, 6, "Sent your IP (chat)")
+                    break
+            end
+        end
+    end
+
+    if posting_userisp_opt then
+        local ltxt = string.lower(text)
+        local isp = menu.ref_by_rel_path(menu.player_root(players.user()), "Information>Connection>ISP")
+        local ispstr = string.match(string.lower(isp.value), "(%w+)(.+)")
+        if string.find(ltxt, ispstr) ~= nil then
+            log("Removing: "..sender.." | Reason: Posted your ISP in chat.", "Chat punishments")
+            kick(sender, 2, "Sent your ISP (chat)")
+        end
+    end
+
+    if kick_scammers_opt ~= 1 then
+        local ltxt = string.lower(text)
+        local is_scammer = false
+        if string.find(ltxt, "selling 2t1") ~= nil then is_scammer = true end
+        if string.find(ltxt, "selling") ~= nil and string.find(ltxt, "key") ~= nil then is_scammer = true end
+        if is_scammer then
+            log("Removing: "..sender.." | Reason: Scammer Detected.", "Chat punishments")
+            pluto_switch kick_scammers_opt do
+                case 2:
+                    kick(sender, 0, "Scammer")
+                    break
+                case 3:
+                    kick(sender, 6, "Scammer")
+                    break
+            end
+        end
+    end
+
+    if #kick_if_player_speaks > 0 then
+        for kick_if_player_speaks as pid do
+            if pid == sender then
+                kick_if_player_speaks_queue[#kick_if_player_speaks_queue + 1] = sender
+            end
+        end
+    end
+
+end)
+
+util.on_pre_stop(function()
+    is_stopping = true
+    if !shadow_starting then
+        saveModderLog()
+        WriteExecStore()
+        SetTotalPlayersRemoved()
+    end
+    for blur as b do
+        directx.blurrect_free(b)
+    end
+end)
+
+util.on_stop(function()
+    if players.get_host() == players.user() then NETWORK.NETWORK_SESSION_BLOCK_JOIN_REQUESTS(false) end
+    local total_time_running_format = string.format("%.0f", ((os.clock() - this_load_start_time) / 60))
+    log("Goodbye, "..PLAYER_USERNAME, "Stop ("..total_time_running_format.."m)")
+end)
+
+util.create_tick_handler(function()
+    if readyInSession() then
+        for players.list() as pid do
+            if players.exists(pid) then
+                local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                if PED.IS_PED_RUNNING_MOBILE_PHONE_TASK(ped) then
+                    notify("PED.IS_PED_RUNNING_MOBILE_PHONE_TASK: true | "..players.get_name(pid))
+                end
+                if PED.IS_MOBILE_PHONE_TO_PED_EAR(ped) then
+                    notify("PED.IS_MOBILE_PHONE_TO_PED_EAR: true | "..players.get_name(pid))
+                end
+                
+                local isXcriptUser = 0
+                local shadowXU = 0
+                if DETECT_XCRIPT then
+                    for _XcriptUser as check do
+                        local result = PED.GET_PED_CONFIG_FLAG(ped, check)
+                        if result then
+                            isXcriptUser += 1
+                            if result == _XcriptUser[1] or result == _XcriptUser[3] then
+                                shadowXU += 1
+                            end
+                        end
+                    end
+                    if shadowXU == 2 then
+                        if isXcriptUser == 4 then
+                            if !IsDetectionPresent(pid, "Xcript User") and !IsDetectionPresent(pid, "Xcript Developer") then
+                                if players.get_rockstar_id(pid) == XCRIPT_DEV_RID then
+                                    players.add_detection(pid, "Xcript Developer", 7, 100)
+                                else
+                                    players.add_detection(pid, "Xcript User", 7, 100)
+                                    if !StandUser(pid, true) then
+                                        players.add_detection(pid, "Stand User", 7, 100)
+                                    end
+                                end
+                            end
+                        end
+                        if dev_vers and private_vers and pspec_0 then
+                            pfunc_5(pid)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+util.create_thread(function(thr)
+    while true do
+        if readyInSession() then
+            if XUID_ON then
+                for _XcriptUser as flag do
+                    PED.SET_PED_CONFIG_FLAG(players.user_ped(), flag, true)
+                end
+            else
+                PED.SET_PED_CONFIG_FLAG(players.user_ped(), _XcriptUser[1], true)
+                PED.SET_PED_CONFIG_FLAG(players.user_ped(), _XcriptUser[3], true)
+            end
+        end
+    wait() end
+end)
+
+enum eventType begin
+    EVENT_INVALID = -1,
+    EVENT_ACQUAINTANCE_PED_DISLIKE,
+	EVENT_ACQUAINTANCE_PED_HATE,
+	EVENT_ACQUAINTANCE_PED_LIKE,
+	EVENT_ACQUAINTANCE_PED_RESPECT,
+	EVENT_ACQUAINTANCE_PED_WANTED,
+	EVENT_ACQUAINTANCE_PED_DEAD,
+	EVENT_AGITATED,
+	EVENT_AGITATED_ACTION,
+	EVENT_ENCROACHING_PED,
+	EVENT_CALL_FOR_COVER,
+	EVENT_CAR_UNDRIVEABLE,
+	EVENT_CLIMB_LADDER_ON_ROUTE,
+	EVENT_CLIMB_NAVMESH_ON_ROUTE,
+	EVENT_COMBAT_TAUNT,
+	EVENT_COMMUNICATE_EVENT,
+	EVENT_COP_CAR_BEING_STOLEN,
+	EVENT_CRIME_REPORTED,
+	EVENT_DAMAGE,
+	EVENT_DEAD_PED_FOUND,
+	EVENT_DEATH,
+	EVENT_DRAGGED_OUT_CAR,
+	EVENT_DUMMY_CONVERSION,
+	EVENT_EXPLOSION,
+	EVENT_EXPLOSION_HEARD,
+	EVENT_FIRE_NEARBY,
+	EVENT_FLUSH_TASKS,
+	EVENT_FOOT_STEP_HEARD,
+	EVENT_GET_OUT_OF_WATER,
+	EVENT_GIVE_PED_TASK,
+	EVENT_GUN_AIMED_AT,
+	EVENT_HELP_AMBIENT_FRIEND,
+	EVENT_INJURED_CRY_FOR_HELP,
+	EVENT_CRIME_CRY_FOR_HELP,
+	EVENT_IN_AIR,
+	EVENT_IN_WATER,
+	EVENT_INCAPACITATED,
+	EVENT_LEADER_ENTERED_CAR_AS_DRIVER,
+	EVENT_LEADER_ENTERED_COVER,
+	EVENT_LEADER_EXITED_CAR_AS_DRIVER,
+	EVENT_LEADER_HOLSTERED_WEAPON,
+	EVENT_LEADER_LEFT_COVER,
+	EVENT_LEADER_UNHOLSTERED_WEAPON,
+	EVENT_MELEE_ACTION,
+	EVENT_MUST_LEAVE_BOAT,
+	EVENT_NEW_TASK,
+	EVENT_NONE,
+	EVENT_OBJECT_COLLISION,
+	EVENT_ON_FIRE,
+	EVENT_OPEN_DOOR,
+	EVENT_SHOVE_PED,
+	EVENT_PED_COLLISION_WITH_PED,
+	EVENT_PED_COLLISION_WITH_PLAYER,
+	EVENT_PED_ENTERED_MY_VEHICLE,
+	EVENT_PED_JACKING_MY_VEHICLE,
+	EVENT_PED_ON_CAR_ROOF,
+	EVENT_PED_TO_CHASE,
+	EVENT_PED_TO_FLEE,
+	EVENT_PLAYER_COLLISION_WITH_PED,
+	EVENT_PLAYER_LOCK_ON_TARGET,
+	EVENT_POTENTIAL_BE_WALKED_INTO,
+	EVENT_POTENTIAL_BLAST,
+	EVENT_POTENTIAL_GET_RUN_OVER,
+	EVENT_POTENTIAL_WALK_INTO_FIRE,
+	EVENT_POTENTIAL_WALK_INTO_OBJECT,
+	EVENT_POTENTIAL_WALK_INTO_VEHICLE,
+	EVENT_PROVIDING_COVER,
+	EVENT_RADIO_TARGET_POSITION,
+	EVENT_RAN_OVER_PED,
+	EVENT_REACTION_COMBAT_VICTORY,
+	EVENT_REACTION_ENEMY_PED,
+	EVENT_REACTION_INVESTIGATE_DEAD_PED,
+	EVENT_REACTION_INVESTIGATE_THREAT,
+	EVENT_REQUEST_HELP_WITH_CONFRONTATION,
+	EVENT_RESPONDED_TO_THREAT,
+	EVENT_REVIVED,
+	EVENT_SCRIPT_COMMAND,
+	EVENT_SHOCKING_BROKEN_GLASS,
+	EVENT_SHOCKING_CAR_ALARM,
+	EVENT_SHOCKING_CAR_CHASE,
+	EVENT_SHOCKING_CAR_CRASH,
+	EVENT_SHOCKING_BICYCLE_CRASH,
+	EVENT_SHOCKING_CAR_PILE_UP,
+	EVENT_SHOCKING_CAR_ON_CAR,
+	EVENT_SHOCKING_DANGEROUS_ANIMAL,
+	EVENT_SHOCKING_DEAD_BODY,
+	EVENT_SHOCKING_DRIVING_ON_PAVEMENT,
+	EVENT_SHOCKING_BICYCLE_ON_PAVEMENT,
+	EVENT_SHOCKING_ENGINE_REVVED,
+	EVENT_SHOCKING_EXPLOSION,
+	EVENT_SHOCKING_FIRE,
+	EVENT_SHOCKING_GUN_FIGHT,
+	EVENT_SHOCKING_GUNSHOT_FIRED,
+	EVENT_SHOCKING_HELICOPTER_OVERHEAD,
+	EVENT_SHOCKING_PARACHUTER_OVERHEAD,
+	EVENT_SHOCKING_PED_KNOCKED_INTO_BY_PLAYER,
+	EVENT_SHOCKING_HORN_SOUNDED,
+	EVENT_SHOCKING_IN_DANGEROUS_VEHICLE,
+	EVENT_SHOCKING_INJURED_PED,
+	EVENT_SHOCKING_MAD_DRIVER,
+	EVENT_SHOCKING_MAD_DRIVER_EXTREME,
+	EVENT_SHOCKING_MAD_DRIVER_BICYCLE,
+	EVENT_SHOCKING_MUGGING,
+	EVENT_SHOCKING_NON_VIOLENT_WEAPON_AIMED_AT,
+	EVENT_SHOCKING_PED_RUN_OVER,
+	EVENT_SHOCKING_PED_SHOT,
+	EVENT_SHOCKING_PLANE_FLY_BY,
+	EVENT_SHOCKING_POTENTIAL_BLAST,
+	EVENT_SHOCKING_PROPERTY_DAMAGE,
+	EVENT_SHOCKING_RUNNING_PED,
+	EVENT_SHOCKING_RUNNING_STAMPEDE,
+	EVENT_SHOCKING_SEEN_CAR_STOLEN,
+	EVENT_SHOCKING_SEEN_CONFRONTATION,
+	EVENT_SHOCKING_SEEN_GANG_FIGHT,
+	EVENT_SHOCKING_SEEN_INSULT,
+	EVENT_SHOCKING_SEEN_MELEE_ACTION,
+	EVENT_SHOCKING_SEEN_NICE_CAR,
+	EVENT_SHOCKING_SEEN_PED_KILLED,
+	EVENT_SHOCKING_SEEN_VEHICLE_TOWED,
+	EVENT_SHOCKING_SEEN_WEAPON_THREAT,
+	EVENT_SHOCKING_SEEN_WEIRD_PED,
+	EVENT_SHOCKING_SEEN_WEIRD_PED_APPROACHING,
+	EVENT_SHOCKING_SIREN,
+	EVENT_SHOCKING_STUDIO_BOMB,
+	EVENT_SHOCKING_VISIBLE_WEAPON,
+	EVENT_SHOT_FIRED,
+	EVENT_SHOT_FIRED_BULLET_IMPACT,
+	EVENT_SHOT_FIRED_WHIZZED_BY,
+	EVENT_FRIENDLY_AIMED_AT,
+	EVENT_FRIENDLY_FIRE_NEAR_MISS,
+	EVENT_SHOUT_BLOCKING_LOS,
+	EVENT_SHOUT_TARGET_POSITION,
+	EVENT_STATIC_COUNT_REACHED_MAX,
+	EVENT_STUCK_IN_AIR,
+	EVENT_SUSPICIOUS_ACTIVITY,
+	EVENT_SWITCH_2_NM_TASK,
+	EVENT_UNIDENTIFIED_PED,
+	EVENT_VEHICLE_COLLISION,
+	EVENT_VEHICLE_DAMAGE_WEAPON,
+	EVENT_VEHICLE_ON_FIRE,
+	EVENT_WHISTLING_HEARD,
+	EVENT_DISTURBANCE,
+	EVENT_ENTITY_DAMAGED,
+	EVENT_ENTITY_DESTROYED,
+	EVENT_WRITHE,
+	EVENT_HURT_TRANSITION,
+	EVENT_PLAYER_UNABLE_TO_ENTER_VEHICLE,
+	EVENT_SCENARIO_FORCE_ACTION,
+	EVENT_STAT_VALUE_CHANGED,
+	EVENT_PLAYER_DEATH,
+	EVENT_PED_SEEN_DEAD_PED,
+	EVENT_0xC92B98C8,
+	EVENT_NETWORK_PLAYER_JOIN_SESSION,
+	EVENT_NETWORK_PLAYER_LEFT_SESSION,
+	EVENT_NETWORK_PLAYER_JOIN_SCRIPT,
+	EVENT_NETWORK_PLAYER_LEFT_SCRIPT,
+	EVENT_NETWORK_STORE_PLAYER_LEFT,
+	EVENT_NETWORK_SESSION_START,
+	EVENT_NETWORK_SESSION_END,
+	EVENT_NETWORK_START_MATCH,
+	EVENT_NETWORK_END_MATCH,
+	EVENT_NETWORK_REMOVED_FROM_SESSION_DUE_TO_STALL,
+	EVENT_NETWORK_REMOVED_FROM_SESSION_DUE_TO_COMPLAINTS,
+	EVENT_NETWORK_CONNECTION_TIMEOUT,
+	EVENT_NETWORK_PED_DROPPED_WEAPON,
+	EVENT_NETWORK_PLAYER_SPAWN,
+	EVENT_NETWORK_PLAYER_COLLECTED_PICKUP,
+	EVENT_NETWORK_PLAYER_COLLECTED_AMBIENT_PICKUP,
+	EVENT_NETWORK_PLAYER_COLLECTED_PORTABLE_PICKUP,
+	EVENT_NETWORK_PLAYER_DROPPED_PORTABLE_PICKUP,
+	EVENT_0x53C98CF2,
+	EVENT_NETWORK_INVITE_ACCEPTED,
+	EVENT_NETWORK_INVITE_CONFIRMED,
+	EVENT_NETWORK_INVITE_REJECTED,
+	EVENT_NETWORK_SUMMON,
+	EVENT_NETWORK_SCRIPT_EVENT,
+	EVENT_NETWORK_PLAYER_SIGNED_OFFLINE,
+	EVENT_NETWORK_SIGN_IN_STATE_CHANGED,
+	EVENT_NETWORK_NETWORK_ROS_CHANGED,
+	EVENT_NETWORK_SIGN_IN_CHANGE_ACTIONED,
+	EVENT_NETWORK_NETWORK_BAIL,
+	EVENT_NETWORK_HOST_MIGRATION,
+	EVENT_NETWORK_FIND_SESSION,
+	EVENT_NETWORK_HOST_SESSION,
+	EVENT_NETWORK_JOIN_SESSION,
+	EVENT_NETWORK_JOIN_SESSION_RESPONSE,
+	EVENT_NETWORK_CHEAT_TRIGGERED,
+	EVENT_NETWORK_DAMAGE_ENTITY,
+	EVENT_NETWORK_PLAYER_ARREST,
+	EVENT_NETWORK_TIMED_EXPLOSION,
+	EVENT_NETWORK_PRIMARY_CLAN_CHANGED,
+	EVENT_NETWORK_CLAN_JOINED,
+	EVENT_NETWORK_CLAN_LEFT,
+	EVENT_NETWORK_CLAN_INVITE_RECEIVED,
+	EVENT_VOICE_SESSION_STARTED,
+	EVENT_VOICE_SESSION_ENDED,
+	EVENT_VOICE_CONNECTION_REQUESTED,
+	EVENT_VOICE_CONNECTION_RESPONSE,
+	EVENT_VOICE_CONNECTION_TERMINATED,
+	EVENT_TEXT_MESSAGE_RECEIVED,
+	EVENT_CLOUD_FILE_RESPONSE,
+	EVENT_NETWORK_PICKUP_RESPAWNED,
+	EVENT_NETWORK_PRESENCE_STAT_UPDATE,
+	EVENT_NETWORK_PED_LEFT_BEHIND,
+	EVENT_NETWORK_INBOX_MSGS_RCVD,
+	EVENT_NETWORK_ATTEMPT_HOST_MIGRATION,
+	EVENT_NETWORK_INCREMENT_STAT,
+	EVENT_NETWORK_SESSION_EVENT,
+	EVENT_NETWORK_TRANSITION_STARTED,
+	EVENT_NETWORK_TRANSITION_EVENT,
+	EVENT_NETWORK_TRANSITION_MEMBER_JOINED,
+	EVENT_NETWORK_TRANSITION_MEMBER_LEFT,
+	EVENT_NETWORK_TRANSITION_PARAMETER_CHANGED,
+	EVENT_NETWORK_CLAN_KICKED,
+	EVENT_NETWORK_TRANSITION_STRING_CHANGED,
+	EVENT_NETWORK_TRANSITION_GAMER_INSTRUCTION,
+	EVENT_NETWORK_PRESENCE_INVITE,
+	EVENT_NETWORK_PRESENCE_INVITE_REMOVED,
+	EVENT_NETWORK_PRESENCE_INVITE_REPLY,
+	EVENT_NETWORK_CASH_TRANSACTION_LOG,
+	EVENT_NETWORK_CLAN_RANK_CHANGE,
+	EVENT_NETWORK_VEHICLE_UNDRIVABLE,
+	EVENT_NETWORK_PRESENCE_TRIGGER,
+	EVENT_NETWORK_PRESENCE_EMAIL,
+	EVENT_NETWORK_FOLLOW_INVITE_RECEIVED,
+	EVENT_NETWORK_ADMIN_INVITED,
+	EVENT_NETWORK_SPECTATE_LOCAL,
+	EVENT_NETWORK_CLOUD_EVENT,
+	EVENT_NETWORK_SHOP_TRANSACTION,
+	EVENT_NETWORK_PERMISSION_CHECK_RESULT,
+	EVENT_NETWORK_APP_LAUNCHED,
+	EVENT_NETWORK_ONLINE_PERMISSIONS_UPDATED,
+	EVENT_NETWORK_SYSTEM_SERVICE_EVENT,
+	EVENT_NETWORK_REQUEST_DELAY,
+	EVENT_NETWORK_SOCIAL_CLUB_ACCOUNT_LINKED,
+	EVENT_NETWORK_SCADMIN_PLAYER_UPDATED,
+	EVENT_NETWORK_SCADMIN_RECEIVED_CASH,
+	EVENT_NETWORK_CLAN_INVITE_REQUEST_RECEIVED,
+	EVENT_0x93AC2785,
+	EVENT_NETWORK_STUNT_PERFORMED,
+	EVENT_NETWORK_FIRED_DUMMY_PROJECTILE,
+	EVENT_NETWORK_PLAYER_ENTERED_VEHICLE,
+	EVENT_NETWORK_PLAYER_ACTIVATED_SPECIAL_ABILITY,
+	EVENT_NETWORK_PLAYER_DEACTIVATED_SPECIAL_ABILITY,
+	EVENT_NETWORK_PLAYER_SPECIAL_ABILITY_FAILED_ACTIVATION,
+	EVENT_NETWORK_FIRED_VEHICLE_PROJECTILE,
+	EVENT_NETWORK_SC_MEMBERSHIP_STATUS,
+	EVENT_NETWORK_SC_BENEFITS_STATUS,
+	EVENT_0x4A8A5373,
+	EVENT_ERRORS_UNKNOWN_ERROR,
+	EVENT_ERRORS_ARRAY_OVERFLOW,
+	EVENT_ERRORS_INSTRUCTION_LIMIT,
+	EVENT_ERRORS_STACK_OVERFLOW,
+	EVENT_0x063E563B,
+	EVENT_0x9DEA6A90
+end
+
+-- Script Events Thread
+util.create_thread(function(thr)
+    while true do
+        local eventData_13 = memory.alloc(13 * 8)
+        for eventNum = 0, SCRIPT.GET_NUMBER_OF_EVENTS(1) - 1 do
+            local eventId = SCRIPT.GET_EVENT_AT_INDEX(1, eventNum)
+
+            if eventId == EVENT_NETWORK_END_MATCH then log("EVENT_NETWORK_END_MATCH", "EVENT") end
+            if eventId == EVENT_NETWORK_SESSION_END then log("EVENT_NETWORK_SESSION_END", "EVENT") end
+            -- if eventId == EVENT_NETWORK_PLAYER_JOIN_SCRIPT then log("EVENT_NETWORK_PLAYER_JOIN_SCRIPT", "EVENT") end
+            if eventId == EVENT_NETWORK_PLAYER_JOIN_SESSION then log("EVENT_NETWORK_PLAYER_JOIN_SESSION", "EVENT") end
+            if eventId == EVENT_NETWORK_PLAYER_SIGNED_OFFLINE then log("EVENT_NETWORK_PLAYER_SIGNED_OFFLINE", "EVENT") end
+            if eventId == EVENT_NETWORK_INBOX_MSGS_RCVD then log("EVENT_NETWORK_INBOX_MSGS_RCVD", "EVENT") end
+            if eventId == EVENT_NETWORK_REMOVED_FROM_SESSION_DUE_TO_COMPLAINTS then log("EVENT_NETWORK_REMOVED_FROM_SESSION_DUE_TO_COMPLAINTS", "EVENT") end
+            if eventId == EVENT_NETWORK_REMOVED_FROM_SESSION_DUE_TO_STALL then log("EVENT_NETWORK_REMOVED_FROM_SESSION_DUE_TO_STALL", "EVENT") end
+            if eventId == EVENT_NETWORK_SIGN_IN_STATE_CHANGED then log("EVENT_NETWORK_SIGN_IN_STATE_CHANGED", "EVENT") end
+            if eventId == EVENT_NETWORK_CONNECTION_TIMEOUT then log("EVENT_NETWORK_CONNECTION_TIMEOUT", "EVENT") end
+            if eventId == EVENT_FRIENDLY_AIMED_AT then log("EVENT_FRIENDLY_AIMED_AT", "EVENT") end
+            if eventId == EVENT_GUN_AIMED_AT then log("EVENT_GUN_AIMED_AT", "EVENT") end
+            if eventId == EVENT_SUSPICIOUS_ACTIVITY then log("EVENT_SUSPICIOUS_ACTIVITY", "EVENT") end
+
+
+            -- Damage Event
+            if eventId == EVENT_NETWORK_DAMAGE_ENTITY then
+                if SCRIPT.GET_EVENT_DATA(1, eventNum, eventData_13, 13) then
+                    local victim = memory.read_int(eventData_13)
+                    local attacker = memory.read_int(eventData_13 + 1 * 8)
+                    local damage = memory.read_float(eventData_13 + 2 * 8)
+                    local victimDestroyed = memory.read_int(eventData_13 + 5 * 8)
+                    local weaponUsedHash = memory.read_int(eventData_13 + 6 * 8)
+                    local weapon_name = util.reverse_joaat(weaponUsedHash)
+                    if weapon_name == "" then weapon_name = "Unknown" end
+    
+                    if victim != -1 and attacker != -1 then
+                        local apid = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(attacker)
+                        local vpid = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(victim)
+
+                        if csm_on then
+                            if apid == players.user() and vpid != players.user() then
+                                if !csm_on_peds and vpid == -1 then goto nomarker end
+                                if ENTITY.IS_ENTITY_A_PED(victim) or (csm_on_vehs and ENTITY.IS_ENTITY_A_VEHICLE(victim)) then
+                                    dhm_queue += 1
+                                    if dhm_queue > 1 then
+                                        PlaySound(hitmarker_soundfile)
+                                        dhm_queue = 0
+                                    else
+                                        PlaySound(hitmarker_lv_soundfile)
+                                    end
+                                    if csm_visuals then draw_hitmarker() end
+                                end
+                            end
+                        end
+                        ::nomarker::
+
+                        if apid != -1 and vpid != -1 then
+                            if victimDestroyed == 1 then
+                                local punish = false
+                                if victim != attacker then -- Killed Others
+                                    player_kills_log[apid] += 1
+                                    if player_kills_logmsg then log(players.get_name(apid).." Killed "..players.get_name(vpid).." With "..weapon_name, "Kill") end
+                                    if player_kill_c_any then punish = true end
+                                    if player_kill_c_friends then
+                                        if NETWORK.NETWORK_IS_FRIEND(pid_to_handle(vpid)) then punish = true end
+                                    end
+                                    if player_kill_c_org then
+                                        if ArePlayersInTheSameOrg(players.user(), vpid) then punish = true end
+                                    end
+                                    if punish and apid != players.user() then
+                                        if player_kill_p_kill then
+                                            trigger_commands("kill"..players.get_name(apid))
+                                            log("Killing: "..players.get_name(apid), "Kill Punishment")
+                                            notify("Killing: "..players.get_name(apid).." (Kill Punishment)")
+                                        end
+                                        if player_kill_p_kick then
+                                            kick(apid, 2, "Kill Punishment")
+                                            log("Kicking: "..players.get_name(apid), "Kill Punishment")
+                                            notify("Kicking: "..players.get_name(apid).." (Kill Punishment)")
+                                        end
+                                    end
+                                elseif victim == attacker then -- Killed Self
+                                    if player_kills_logmsg then log(players.get_name(apid).." Killed Themselves With "..weapon_name, "Kill") end
+                                end
+                            else
+                                local punish = false
+                                if victim != attacker then -- Damaged Others
+                                    if player_damage_c_any then punish = true end
+                                    if player_damage_c_friends then
+                                        if NETWORK.NETWORK_IS_FRIEND(pid_to_handle(vpid)) then punish = true end
+                                    end
+                                    if player_damage_c_org then
+                                        if ArePlayersInTheSameOrg(players.user(), vpid) then punish = true end
+                                    end
+                                end
+                                if punish and apid != players.user() then
+                                    if player_damage_p_kill then
+                                        trigger_commands("kill"..players.get_name(apid))
+                                        log("Killing: "..players.get_name(apid), "Damage Punishment")
+                                        notify("Killing: "..players.get_name(apid).." (Damage Punishment)")
+                                    end
+                                    if player_damage_p_kick then
+                                        kick(apid, 2, "Damage Punishment")
+                                        log("Kicking: "..players.get_name(apid), "Damage Punishment")
+                                        notify("Kicking: "..players.get_name(apid).." (Damage Punishment)")
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+        end
+    wait() end
+end)
+
+local sz_players_timeout = {}
+-- SAFE Zone Thread
+util.create_thread(function(thr)
+    while true do
+        if SAFE_zone_on then
+            for players.list(false, false, true) as pid do
+                if players.exists(pid) then
+                    local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                    local pedc = ENTITY.GET_ENTITY_COORDS(ped, false)
+                    local mpc = ENTITY.GET_ENTITY_COORDS(players.user_ped(), false)
+                    if MISC.GET_DISTANCE_BETWEEN_COORDS(pedc.x, pedc.y, pedc.z, mpc.x, mpc.y, mpc.z, true) <= SAFE_zone_radius then
+                        local sz_enf_tr = false
+                        local violatorid
+                        if SAFE_z_enf_killing then
+                            if string.find(players.get_tags_string(pid), "D") ~= nil or ENTITY.IS_ENTITY_DEAD(ped, false) then
+                                local hash = memory.alloc_int()
+                                local killer = NETWORK.NETWORK_GET_KILLER_OF_PLAYER(pid, hash)
+                                if players.exists(killer) and killer ~= players.user() then
+                                    sz_enf_tr = true
+                                    violatorid = killer
+                                end
+                            end
+                        end
+                        if SAFE_z_enf_shooting then
+                            if PED.IS_PED_SHOOTING(ped) or PED.GET_PED_CONFIG_FLAG(ped, 145) or PED.IS_PED_DOING_DRIVEBY(ped) or PED.GET_PED_CONFIG_FLAG(ped, 58) then
+                                sz_enf_tr = true
+                                violatorid = pid
+                            end
+                        end
+                        if SAFE_z_enf_aiming then
+                            if PLAYER.IS_PLAYER_FREE_AIMING(pid) then
+                                sz_enf_tr = true
+                                violatorid = pid
+                            end
+                        end
+                        if SAFE_z_enf_brandishing_any then
+                            if WEAPON.IS_PED_ARMED(ped, 7) then
+                                sz_enf_tr = true
+                                violatorid = pid
+                            end
+                        end
+                        if SAFE_z_enf_brandishing_not_melee then
+                            if WEAPON.IS_PED_ARMED(ped, 6) then
+                                sz_enf_tr = true
+                                violatorid = pid
+                            end
+                        end
+                        if SAFE_z_enf_brandishing_explosive then
+                            if WEAPON.IS_PED_ARMED(ped, 2) then
+                                sz_enf_tr = true
+                                violatorid = pid
+                            end
+                        end
+
+                        local enfmsg = ""
+                        if sz_enf_tr then
+                            -- Return if cooldown
+                            if sz_players_timeout[violatorid] ~= nil then
+                                if (os.clock() * 1000) - sz_players_timeout[violatorid] < 1000 then
+                                    goto sz_next
+                                else
+                                    sz_players_timeout[violatorid] = os.clock() * 1000
+                                end
+                            else
+                                sz_players_timeout[violatorid] = os.clock() * 1000
+                            end
+
+                            enfmsg = "> Zone Violation > Player: "..players.get_name(violatorid).." | Punishments:"
+                            if SAFE_z_enft_kill then
+                                enfmsg = enfmsg.." Kill |"
+                                sz_enf(0, violatorid)
+                            end
+                            if SAFE_z_enft_disarm then
+                                enfmsg = enfmsg.." Disarm |"
+                                sz_enf(1, violatorid)
+                            end
+                            if SAFE_z_enft_freeze then
+                                enfmsg = enfmsg.." Freeze |"
+                                sz_enf(2, violatorid)
+                            end
+                            if SAFE_z_enft_dpc then
+                                enfmsg = enfmsg.." Disable Player Combat |"
+                                sz_enf(7, violatorid)
+                            end
+                            if SAFE_z_enft_delete_veh then
+                                enfmsg = enfmsg.." Delete Vehicle |"
+                                sz_enf(3, violatorid)
+                            end
+                            if SAFE_z_enft_kick then
+                                enfmsg = enfmsg.." Kick |"
+                                sz_enf(4, violatorid)
+                            end
+                            if SAFE_z_enft_kick_if_godmode then
+                                enfmsg = enfmsg.." Kick if Godmode |"
+                                sz_enf(5, violatorid)
+                            end
+                            if SAFE_z_enft_kick_if_vehicle_god then
+                                enfmsg = enfmsg.." Kick if Vehicle Godmode |"
+                                sz_enf(6, violatorid)
+                            end
+                            if SAFE_z_print_enforcements_in_chat then
+                                msg(enfmsg, false, true, true)
+                            end
+
+                            log(enfmsg, "SAFE Zone")
+                            ::sz_next::
+                        end
+                    end
+                end
+            end
+        end
+    wait() end
+end)
+
+-- Graphics Thread
+util.create_thread(function(thr)
+    while true do
+        if draw_hit_marker then
+            local mc = 0.5
+            local o1, o2 = 0.01, 0.01778
+            local m1, m2 = 0.0025, 0.004445
+            for i = 0, 5 do
+                directx.draw_line(mc - o1, mc - o2, mc - m1, mc - m2, white)
+                directx.draw_line(mc + o1, mc + o2, mc + m1, mc + m2, white)
+                directx.draw_line(mc - o1, mc + o2, mc - m1, mc + m2, white)
+                directx.draw_line(mc + o1, mc - o2, mc + m1, mc - m2, white)
+            wait() end
+            dhm_queue -= 1
+            if dhm_queue < 0 then dhm_queue = 0 end
+            draw_hit_marker = false
+        end
+    wait() end
+end)
+
+-- Overlay Thread
+util.create_thread(function(thr)
+    while true do
+        local focused = players.get_focused()
+        if ((focused[1] ~= nil and focused[2] == nil) or render_window) and menu.is_open() then
+
+            --general info grabbing locals
+            local pid = focused[1]
+            if opt_arrowright_to_add_lmc then
+                if pid ~= nil then
+                    if PAD.IS_CONTROL_JUST_PRESSED(0, 175) then
+                        if menu.is_focused(menu.player_root(pid)) then add_mc_det(pid) end
+                    end
+                end
+            end
+            if render_window then pid = players.user() end
+            local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+            local my_pos, player_pos = players.get_position(players.user()), players.get_position(pid)
+            
+            --general element drawing locals
+            local spacing_x = spacing/ASPECT_RATIO
+            local padding_x = padding/ASPECT_RATIO
+            local player_list_y = gui_y + name_h + spacing
+            local total_w = gui_w + padding_x * 4
+
+            -------------
+            -- CONTENT --
+            -------------
+
+            local heading = ENTITY.GET_ENTITY_HEADING(ped)
+
+            local regions = 
+            {
+                {
+                    width = total_w/2,
+                    content =
+                    {
+                        {"Rank", players.get_rank(pid)},
+                        {"K/D", roundNum(players.get_kd(pid), 2)},
+                        {"Wallet", "$"..formatMoney(players.get_wallet(pid))},
+                        {"Bank", "$"..formatMoney(players.get_bank(pid))}
+                    }
+                },
+                {
+                    width = total_w/2,
+                    content =
+                    {
+                        {"Language", ({"English","French","German","Italian","Spanish","Brazilian","Polish","Russian","Korean","Chinese (T)","Japanese","Mexican","Chinese (S)"})[players.get_language(pid) + 1]},
+                        {"Controller", boolText(players.is_using_controller(pid))},
+                        {"Ping", math.floor(NETWORK.NETWORK_GET_AVERAGE_LATENCY(pid) + 0.5).." ms"},
+                        {"Host Queue", "#"..players.get_host_queue_position(pid)},
+                    }
+                },
+                {
+                    width = total_w + spacing_x,
+                    content =
+                    {
+                        {"Model", util.reverse_joaat(ENTITY.GET_ENTITY_MODEL(ped))},
+                        {"Zone", util.get_label_text(ZONE.GET_NAME_OF_ZONE(player_pos.x, player_pos.y, player_pos.z))},
+                        {"Weapon", hashToWeapon(WEAPON.GET_SELECTED_PED_WEAPON(ped))},
+                        {"Vehicle", checkValue(util.get_label_text(players.get_vehicle_model(pid)))}
+                    }
+                },
+                {
+                    width = total_w/2,
+                    content =
+                    {
+                        {"Distance", math.floor(MISC.GET_DISTANCE_BETWEEN_COORDS(player_pos.x, player_pos.y, player_pos.z, my_pos.x, my_pos.y, my_pos.z)).." m"},
+                        {"Speed", math.floor(ENTITY.GET_ENTITY_SPEED(ped) * 3.6).." km/h"},
+                        {"Going", ({"North","West","South","East","North"})[math.ceil((heading + 45)/90)]..", "..math.ceil(heading).."°"}
+                    }
+                },
+                {
+                    width = total_w/2,
+                    content =
+                    {
+                        {"Organization", ({"None","CEO","MC"})[players.get_org_type(pid) + 2]},
+                        {"Wanted", PLAYER.GET_PLAYER_WANTED_LEVEL(pid).."/5"},
+                        {"Cutscene", boolText(NETWORK.IS_PLAYER_IN_CUTSCENE(pid))}
+                    }
+                },
+                {
+                    width = total_w + spacing_x,
+                    content =
+                    {
+                        {"Tags", checkValue(players.get_tags_string(pid))},
+                        {"Detections", ""}
+                    }
+                }
+            }
+
+            ---------------------
+            -- DRAWING CONTENT --
+            ---------------------
+
+            local font_w, font_h = directx.get_text_size("ABCDEFG", text_size/ASPECT_RATIO)
+            local offset_x = 0
+            local offset_y = 0
+            
+            for k, region in ipairs(regions) do
+                local blur_instance = 1
+                local count = 0
+                for _ in region.content do count = count + 1 end
+                local dict_h = count * (font_h + line_spacing) + padding * 2
+
+                drawBorder(gui_x + offset_x, player_list_y + offset_y, region.width, dict_h)
+                directx.blurrect_draw(blur[blur_instance], gui_x + offset_x, player_list_y + offset_y, region.width, dict_h, blur_strength)
+                drawRect(gui_x + offset_x, player_list_y + offset_y, region.width, dict_h, colour.background)
+
+                local line_count = 0.5
+                for _, v in ipairs(region.content) do
+                    local align = ALIGN_CENTRE_LEFT
+                    if v[1] == "Detections" then align = ALIGN_CENTRE_LEFT end
+                    directx.draw_text(
+                    gui_x + offset_x + padding_x - 0.001, 
+                    player_list_y + offset_y + padding + line_count * (font_h + line_spacing), 
+                    v[1]..": ",
+                    align, 
+                    text_size, 
+                    colour.label
+                    )
+                    directx.draw_text(
+                    gui_x + offset_x + region.width - padding_x - 0.001, 
+                    player_list_y + offset_y + padding + line_count * (font_h + line_spacing), 
+                    v[2], 
+                    ALIGN_CENTRE_RIGHT, 
+                    text_size, 
+                    colour.info
+                    )
+                    line_count += 1
+                    if v[1] == "Detections" then
+                        line_count += 1
+                        for PlayerClassifications(pid) as det do
+                            directx.draw_text(
+                            gui_x + offset_x + region.width - padding_x - 0.001, 
+                            player_list_y + offset_y + padding + line_count * (font_h + line_spacing), 
+                            det, 
+                            ALIGN_CENTRE_RIGHT, 
+                            text_size, 
+                            colour.info
+                            )
+                            line_count += 1
+                        end
+                    end
+                end
+
+                offset_x += region.width + spacing_x
+                if offset_x >= total_w then
+                    offset_y += dict_h + spacing
+                    offset_x = 0
+                end
+                blur_instance += 1
+            end
+
+            --[[
+                REST LOCALS 
+            --]]
+
+            local MAP_RATIO = 902/594
+            local gui_h = offset_y - spacing
+            local map_x = gui_x + total_w + spacing_x * 2
+            local map_w = gui_h/MAP_RATIO/ASPECT_RATIO + 0.001
+            local bar_w = gui_h/50/ASPECT_RATIO * bar_w_mult
+            local map_w_total = map_w + padding_x * 3 + bar_w
+
+            --[[ NAME BAR ]]
+
+            drawBorder(gui_x, gui_y, total_w + spacing_x, name_h)
+
+            directx.blurrect_draw(blur[6], gui_x, gui_y, total_w, name_h, blur_strength)
+
+            drawRect(gui_x, gui_y, total_w + spacing_x, name_h, colour.title_bar)
+
+            directx.draw_text(gui_x + total_w/2, gui_y + name_h/2, players.get_name(pid), ALIGN_CENTRE, name_size, colour.name)
+
+            ---------------
+            -- EMPTY BAR --
+            ---------------
+
+            drawBorder(map_x, gui_y, map_w_total, name_h)
+
+            directx.blurrect_draw(blur[7], map_x, gui_y, map_w_total, name_h, blur_strength)
+
+            drawRect(map_x, gui_y, map_w_total, name_h, colour.title_bar)
+
+            ---------
+            -- MAP --
+            ---------
+
+            --border, blur, background
+            drawBorder(map_x, player_list_y, map_w_total, gui_h)
+
+            directx.blurrect_draw(blur[8], map_x, player_list_y, map_w_total, gui_h, blur_strength)
+
+            drawRect(map_x, player_list_y, map_w_total, gui_h, colour.background)
+
+            --map
+            directx.draw_texture(textures.map, map_w/2, gui_h, 0.5, 0.5, map_x + padding_x * 2 + bar_w + map_w/2 , player_list_y + gui_h/2, 0, colour.map)
+
+            --blip
+            local blip_dx = ((player_pos.x + 3745)/8316) * map_w
+            local blip_dy = (1 - (player_pos.y + 4427)/12689) * gui_h
+            directx.draw_texture(textures.blip, blip_size, blip_size, 0.5, 0.5, map_x + padding_x * 2 + bar_w + blip_dx, player_list_y + blip_dy, (360 - heading)/360, colour.blip)
+
+            -------------------------
+            -- HEALTH & ARMOUR BAR --
+            -------------------------
+
+            --armour bar
+            local armour_perc = PED.GET_PED_ARMOUR(ped)/PLAYER.GET_PLAYER_MAX_ARMOUR(pid)
+            local armour_bar_bg = {r = colour.armour_bar.r/2, g = colour.armour_bar.g/2, b = colour.armour_bar.b/2, a = colour.armour_bar.a}
+
+            drawRect(map_x + padding_x, player_list_y + gui_h/2 - padding/2, bar_w, -((gui_h - padding * 3)/2 * armour_perc), colour.armour_bar) --foreground
+            drawRect(map_x + padding_x, player_list_y + padding, bar_w, (gui_h - padding * 3)/2 * (1 - armour_perc), armour_bar_bg) --background
+
+            --health bar
+            local health_min = ENTITY.GET_ENTITY_HEALTH(ped) - 100
+            if health_min < 0 then health_min = 0 end
+
+            local health_perc = health_min/(ENTITY.GET_ENTITY_MAX_HEALTH(ped) - 100)
+            local health_bar_bg = {r = colour.health_bar.r/2, g = colour.health_bar.g/2, b = colour.health_bar.b/2, a = colour.health_bar.a}
+
+            drawRect(map_x + padding_x, player_list_y + gui_h - padding, bar_w, -((gui_h - padding * 3)/2 * health_perc), colour.health_bar) --foreground
+            drawRect(map_x + padding_x, player_list_y + gui_h/2 + padding/2, bar_w, (gui_h - padding * 3)/2 * (1 - health_perc), health_bar_bg) --background
+        end
+    wait() end
+end)
+
+-- Peds Thread
+util.create_thread(function (thr)
+    while true do
+        if readyInSession() then
+            local all_peds = entities.get_all_peds_as_handles()
+            for k,ped in pairs(all_peds) do
+                if kill_aura then
+                    if (kill_aura_peds and not PED.IS_PED_A_PLAYER(ped)) or (kill_aura_players and PED.IS_PED_A_PLAYER(ped)) then
+                        local pid = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(ped)
+                        if pid == players.user() then goto isuser end
+                        -- local hdl = pid_to_handle(pid)
+                        if (kill_aura_friends and !NETWORK.NETWORK_IS_FRIEND(pid_to_handle(pid))) or !kill_aura_friends then
+                            local target = ENTITY.GET_ENTITY_COORDS(ped, false)
+                            local m_coords = ENTITY.GET_ENTITY_COORDS(players.user_ped(), false)
+                            if MISC.GET_DISTANCE_BETWEEN_COORDS(m_coords.x, m_coords.y, m_coords.z, target.x, target.y, target.z, true) < kill_aura_dist and ENTITY.GET_ENTITY_HEALTH(ped) > 0 then
+                                local owner = 0
+                                if kill_aura_owned_kill then owner = players.user_ped() end
+                                MISC.SHOOT_SINGLE_BULLET_BETWEEN_COORDS(target['x'], target['y'], target['z'], target['x'], target['y'], target['z']+0.1, 300.0, true, 100416529, owner, true, true, 100.0)
+                            elseif ENTITY.GET_ENTITY_HEALTH(ped) == 0 then
+                                -- log(PED.GET_PED_TIME_OF_DEATH(ped))
+                            end
+                        end
+                    end
+                end
+                ::isuser::
+
+                if hell_aura then
+                    if (hell_aura_peds and not PED.IS_PED_A_PLAYER(ped)) or (hell_aura_players and PED.IS_PED_A_PLAYER(ped)) then
+                        local pid = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(ped)
+                        if pid == players.user() then goto isuserha end
+                        local hdl = pid_to_handle(pid)
+                        if (hell_aura_friends and not NETWORK.NETWORK_IS_FRIEND(hdl)) or not hell_aura_friends then
+                            local tgt = ENTITY.GET_ENTITY_COORDS(ped, false)
+                            local m_cds = ENTITY.GET_ENTITY_COORDS(players.user_ped(), false)
+                            if MISC.GET_DISTANCE_BETWEEN_COORDS(m_cds.x, m_cds.y, m_cds.z, tgt.x, tgt.y, tgt.z, true) < hell_aura_dist and ENTITY.GET_ENTITY_HEALTH(ped) > 0 and not FIRE.IS_ENTITY_ON_FIRE(ped) then
+                                -- FIRE.START_ENTITY_FIRE(ped)
+                                -- log("h")
+                                -- wait()
+                                -- FIRE.START_SCRIPT_FIRE(tgt.x, tgt.y, tgt.z, 25, false)
+                                local hash <const> = util.joaat("weapon_molotov")
+                                WEAPON.REQUEST_WEAPON_ASSET(hash, 31, 0)
+	                            while not WEAPON.HAS_WEAPON_ASSET_LOADED(hash) do util.yield_once() end
+                                WEAPON.GIVE_WEAPON_TO_PED(players.user_ped(), hash, 120, true, false)
+                                local owner = 0
+                                if hell_aura_owned_kill then owner = players.user_ped() end
+                                MISC.SHOOT_SINGLE_BULLET_BETWEEN_COORDS(tgt['x'], tgt['y']-0.1, tgt['z']-0.1, tgt['x'], tgt['y']+0.1, tgt['z']+0.1, 300.0, true, hash, owner, false, true, -1082130432)
+                            elseif ENTITY.GET_ENTITY_HEALTH(ped) == 0 then
+                                -- log(PED.GET_PED_TIME_OF_DEATH(ped))
+                            end
+                        end
+                    end
+                end
+                ::isuserha::
+
+                if emp_aura then
+                    if (emp_aura_peds and not PED.IS_PED_A_PLAYER(ped)) or (emp_aura_players and PED.IS_PED_A_PLAYER(ped)) then
+                        local pid = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(ped)
+                        if pid == players.user() then goto isuserempa end
+                        local hdl = pid_to_handle(pid)
+                        if (emp_aura_friends and not NETWORK.NETWORK_IS_FRIEND(hdl)) or not emp_aura_friends then
+                            local tgt = ENTITY.GET_ENTITY_COORDS(ped, false)
+                            local m_cds = ENTITY.GET_ENTITY_COORDS(players.user_ped(), false)
+                            if MISC.GET_DISTANCE_BETWEEN_COORDS(m_cds.x, m_cds.y, m_cds.z, tgt.x, tgt.y, tgt.z, true) < emp_aura_dist and ENTITY.GET_ENTITY_HEALTH(ped) > 0 then
+                                local hash <const> = util.joaat("weapon_emplauncher")
+                                WEAPON.REQUEST_WEAPON_ASSET(hash, 31, 0)
+	                            while not WEAPON.HAS_WEAPON_ASSET_LOADED(hash) do util.yield_once() end
+                                WEAPON.GIVE_WEAPON_TO_PED(players.user_ped(), hash, 120, true, false)
+                                local owner = 0
+                                if emp_aura_owned_kill then owner = players.user_ped() end
+                                MISC.SHOOT_SINGLE_BULLET_BETWEEN_COORDS(tgt['x'], tgt['y']-0.1, tgt['z']-0.1, tgt['x'], tgt['y']+0.1, tgt['z']+0.1, 1000.0, true, hash, owner, false, true, -1082130432)
+                            elseif ENTITY.GET_ENTITY_HEALTH(ped) == 0 then
+                                -- log(PED.GET_PED_TIME_OF_DEATH(ped))
+                            end
+                        end
+                    end
+                end
+                ::isuserempa::
+
+                if deaths_touch then
+                    if NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(ped) == players.user() then goto s_d_t end
+                    if ENTITY.IS_ENTITY_TOUCHING_ENTITY(ped, VEHICLE.GET_LAST_DRIVEN_VEHICLE()) and not deaths_touch_e_lv then goto d_t_ip_s end
+                    if not ENTITY.IS_ENTITY_TOUCHING_ENTITY(ped, players.user_ped()) then goto s_d_t end
+                    ::d_t_ip_s::
+                    if PED.IS_PED_A_PLAYER(ped) then
+                        local pid = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(ped)
+                        if deaths_touch_i_f then
+                            local hdl = pid_to_handle(pid)
+                            if NETWORK.NETWORK_IS_FRIEND(hdl) then goto s_d_t end
+                        end
+                        if deaths_touch_i_o and ArePlayersInTheSameOrg(players.user(), pid) then goto s_d_t end
+                        if deaths_touch_i_c and ArePlayersInTheSameCrew(players.user(), pid) then goto s_d_t end
+                        if deaths_touch_i_nm then
+                            if not players.is_marked_as_modder(pid) then
+                                if deaths_touch_clmam then
+                                    if string.find(players.get_tags_string(pid), "-") == nil then goto s_d_t end
+                                else goto s_d_t end
+                            end
+                        end
+                        if deaths_touch_i_m then
+                            if players.is_marked_as_modder(pid) then goto s_d_t end
+                            if deaths_touch_clmam then
+                                if string.find(players.get_tags_string(pid), "-") ~= nil then goto s_d_t end
+                            end
+                        end
+                        if string.find(players.get_tags_string(pid), "D") ~= nil or ENTITY.IS_ENTITY_DEAD(ped, false) or PED.IS_PED_DEAD_OR_DYING(ped, true) then goto s_d_t end
+                        if ENTITY.GET_ENTITY_CAN_BE_DAMAGED(ped) and not players.is_godmode(pid) then
+                            trigger_commands("kill"..players.get_name(pid))
+                        else
+                            ENTITY.SET_ENTITY_INVINCIBLE(ped, false)
+                            PLAYER.SET_PLAYER_INVINCIBLE(pid, false)
+                            PLAYER.SET_PLAYER_INVINCIBLE_BUT_HAS_REACTIONS(pid, false)
+                            ENTITY.SET_ENTITY_CAN_BE_DAMAGED(ped, true)
+                            PED.SET_PED_CONFIG_FLAG(ped, 33, true)
+                            PED.SET_PED_TO_RAGDOLL(ped, 1500, 2000, 0, true, true, true)
+                            -- ENTITY.SET_ENTITY_HEALTH(ped, 1, 0)
+                            -- PLAYER.SET_PLAYER_CAN_DAMAGE_PLAYER(players.user(), pid, true)
+                            -- wait()
+                            -- PED.APPLY_DAMAGE_TO_PED(ped, 100000, 1, 0)
+                            trigger_commands("kill"..players.get_name(pid))
+                            if deaths_touch_kig then
+                                wait()
+                                kick(pid, 0, "Deaths Touch")
+                                wait()
+                                ENTITY.SET_ENTITY_INVINCIBLE(ped, false)
+                                PED.APPLY_DAMAGE_TO_PED(ped, 100000, 1, 0)
+                                goto s_d_t
+                            end
+                        end
+                        if csm_on then
+                            PlaySound(hitmarker_soundfile)
+                            if csm_visuals then draw_hitmarker() end
+                        end
+                        goto s_d_t
+                    end
+                    if csm_on_peds and not PED.IS_PED_DEAD_OR_DYING(ped, true) then
+                        if csm_on then
+                            PlaySound(hitmarker_soundfile)
+                            if csm_visuals then draw_hitmarker() end
+                        end
+                    end
+                    ENTITY.SET_ENTITY_HEALTH(ped, 0, 0, 0)
+                end
+
+                ::s_d_t::
+
+                if blink_on then
+                    if blink_clone != nil then
+                        if not PED.GET_PED_CONFIG_FLAG(blink_clone, 17, true) then
+                            PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(blink_clone, true)
+                            TASK.TASK_SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(blink_clone, true)
+                        end
+                    end
+                end
+
+                -- Non Players
+                if not PED.IS_PED_A_PLAYER(ped) then
+
+                    if police_mode then
+                        if PED.GET_PED_TYPE(ped) == 6 or PED.GET_PED_TYPE(ped) == 27 then
+                            HUD.SET_PED_HAS_AI_BLIP(ped, true)
+                        end
+                    end
+
+                    if allpeds_are_mp_players then
+                        HUD.CREATE_FAKE_MP_GAMER_TAG(ped, PLAYER_USERNAME, false, false, "", 0)
+                    end
+
+                    if peds_ignore then
+                        if not PED.GET_PED_CONFIG_FLAG(ped, 17, true) then
+                            PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(ped, true)
+                            TASK.TASK_SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(ped, true)
+                        end
+                    end
+
+                    if peds_shrink then
+                        PED.SET_PED_CONFIG_FLAG(ped, 223, true)
+                    end
+
+                    if traffic_ignore_signals then
+                        -- ENTITY.SET_ENTITY_TRAFFICLIGHT_OVERRIDE(ped, 0)
+                        TASK.SET_DRIVE_TASK_DRIVING_STYLE(ped, 2883621)
+                    end
+
+                    if traffic_exp_oi then
+                        local veh = PED.GET_VEHICLE_PED_IS_USING(ped)
+                        if ENTITY.DOES_ENTITY_EXIST(veh) then
+                            VEHICLE.SET_VEHICLE_OUT_OF_CONTROL(veh, true, true)
+                        end
+                    end
+
+                    if all_peds_are_player then
+                        if ENTITY.GET_ENTITY_MODEL(ped) ~= ENTITY.GET_ENTITY_MODEL(players.user_ped()) then
+                            local veh = PED.GET_VEHICLE_PED_IS_USING(ped)
+                            local c = ENTITY.GET_ENTITY_COORDS(ped, false)
+                            local h = ENTITY.GET_ENTITY_HEADING(ped)
+                            local stopped = PED.IS_PED_STOPPED(ped)
+                            local clone = PED.CLONE_PED(players.user_ped(), true, false, true)
+                            ENTITY.SET_ENTITY_NO_COLLISION_ENTITY(players.user_ped(), clone, true)
+                            NETWORK.NETWORK_USE_HIGH_PRECISION_BLENDING(NETWORK.PED_TO_NET(clone), true)
+                            NETWORK.NETWORK_APPLY_CACHED_PLAYER_HEAD_BLEND_DATA(clone, players.user())
+                            PED.CLONE_PED_TO_TARGET(players.user_ped(), clone)
+                            entities.delete(ped)
+                            wait()
+                            ENTITY.SET_ENTITY_COORDS(clone, c.x, c.y, c.z)
+                            ENTITY.SET_ENTITY_HEADING(clone, h)
+                            if ENTITY.DOES_ENTITY_EXIST(veh) then
+                                PED.SET_PED_INTO_VEHICLE(clone, veh, -1)
+                                TASK.TASK_VEHICLE_DRIVE_WANDER(clone, veh, 15.0, 786603)
+                            else
+                                if not stopped then TASK.TASK_WANDER_STANDARD(clone, 10.0, 10) end
+                            end
+                        end
+                    end
+
+                    if peds_fight_back then
+                        PED.SET_PED_COMBAT_ATTRIBUTES(ped, 5, true)
+                        PED.SET_PED_FLEE_ATTRIBUTES(ped, 0, false)
+                        PED.SET_PED_COMBAT_ATTRIBUTES(ped, 46, true)
+                        PED.SET_PED_ACCURACY(ped, 100)
+                        PED.SET_PED_COMBAT_ABILITY(ped, 3)
+                    end
+
+                    if peds_highperception then
+                        PED.SET_PED_HIGHLY_PERCEPTIVE(ped, true)
+                        PED.SET_PED_HEARING_RANGE(ped, 1000.0)
+                        PED.SET_PED_SEEING_RANGE(ped, 1000.0)
+                        PED.SET_PED_VISUAL_FIELD_MIN_ANGLE(ped, 1000.0)
+                    end
+
+                    if peds_allcops then
+                        PED.SET_PED_AS_COP(ped, true)
+                    end
+
+                    if peds_are_enemies then 
+                        PED.SET_PED_AS_ENEMY(ped, true)
+                        PED.SET_PED_COMBAT_ATTRIBUTES(ped, 5, true)
+                        PED.SET_PED_FLEE_ATTRIBUTES(ped, 0, false)
+                        PED.SET_PED_COMBAT_ATTRIBUTES(ped, 46, true)
+                        TASK.TASK_COMBAT_PED(ped, players.user_ped(), 0, 16)
+                    end
+
+                end
+            end
+        end
+        wait()
+    end
+end)
+
+-- Aiming Thread
+util.create_thread(function(thr)
+    while true do
+
+        if aim_info then
+            local info = get_aim_info()
+            if info['ent'] ~= 0 then
+                local text = "Hash: " .. info['hash'] .. "\nEntity: " .. info['ent'] .. "\nHealth: " .. info['health'] .. "\nType: " .. info['type'] .. "\nSpeed: " .. info['speed']
+                directx.draw_text(0.5, 0.3, text, 5, 0.5, white, true)
+            end
+        end
+
+        if gun_stealer then
+            if PED.IS_PED_SHOOTING(players.user_ped()) then
+                local ent = get_aim_info()['ent']
+                if ENTITY.IS_ENTITY_A_VEHICLE(ent) then
+                    local driver = VEHICLE.GET_PED_IN_VEHICLE_SEAT(ent, -1)
+                    if PED.IS_PED_A_PLAYER(driver) then
+                        hijack_veh_for_player(ent)
+                    end
+                    request_control_of_entity(ent)
+                    set_player_into_suitable_seat(ent)
+                end
+            end
+        end
+
+        if drivergun then
+            local ent = get_aim_info()['ent']
+            if PED.IS_PED_SHOOTING(players.user_ped()) then
+                request_control_of_entity(ent)
+                if ENTITY.IS_ENTITY_A_VEHICLE(ent) then
+                    local driver = VEHICLE.GET_PED_IN_VEHICLE_SEAT(ent, -1)
+                    if driver == 0 or not PED.IS_PED_A_PLAYER(driver) then
+                        if not PED.IS_PED_A_PLAYER(driver) then
+                            entities.delete_by_handle(driver)
+                        end
+                        local hash = 0x9C9EFFD8
+                        request_model_load(hash)
+                        local coords = ENTITY.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(ent, -2.0, 0.0, 0.0)
+                        local ped = entities.create_ped(28, hash, coords, 30.0)
+                        PED.SET_PED_INTO_VEHICLE(ped, ent, -1)
+                        ENTITY.SET_ENTITY_INVINCIBLE(ped, true)
+                        PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(ped, true)
+                        PED.SET_PED_FLEE_ATTRIBUTES(ped, 0, false)
+                        PED.SET_PED_COMBAT_ATTRIBUTES(ped, 46, true)
+                        PED.SET_PED_CAN_BE_DRAGGED_OUT(ped, false)
+                        PED.SET_PED_CAN_BE_KNOCKED_OFF_VEHICLE(ped, false)
+                        TASK.TASK_VEHICLE_DRIVE_TO_COORD(ped, ent, math.random(1000), math.random(1000), math.random(100), 100, 1, ENTITY.GET_ENTITY_MODEL(ent), 4, 5, 0)
+                    end
+                end
+            end
+        end
+
+        if disassemblergun ~= 1 then
+            local ent = get_aim_info()['ent']
+            if ENTITY.IS_ENTITY_A_VEHICLE(ent) then
+                request_control_of_entity(ent)
+                if PED.IS_PED_SHOOTING(players.user_ped()) then
+                    local del
+                    if disassemblergun == 2 then
+                        del = false
+                    else
+                        del = true
+                    end
+                    local doors = VEHICLE.GET_NUMBER_OF_VEHICLE_DOORS(ent)
+                    if PED.IS_PED_A_PLAYER(VEHICLE.GET_PED_IN_VEHICLE_SEAT(ent, -1)) then
+                        VEHICLE.POP_OUT_VEHICLE_WINDSCREEN(ent)
+                        for i = 0, doors do
+                            VEHICLE.SET_VEHICLE_DOOR_BROKEN(ent, i, del)
+                        end
+                        for i, wheel_index in {0, 1, 2, 3, 4, 5, 45, 47} do
+                            entities.detach_wheel(ent, wheel_index)
+                        end
+                    else
+                        VEHICLE.POP_OUT_VEHICLE_WINDSCREEN(ent)
+                        for i = 0, doors do
+                            VEHICLE.SET_VEHICLE_DOOR_BROKEN(ent, i, del)
+                        end
+                        for i, wheel_index in {0, 1, 2, 3, 4, 5, 45, 47} do
+                            entities.detach_wheel(ent, wheel_index)
+                        end
+                    end
+                end
+            end
+        end
+
+    wait() end
+end)
+
+-- Vehicles Thread
+util.create_thread(function(thr)
+    while true do
+        player_cur_car = entities.get_user_vehicle_as_handle()
+        for players.list(true, true, true) as pid do
+            local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+            local veh = PED.GET_VEHICLE_PED_IS_USING(ped)
+            if veh ~= 0 and players_last_veh[pid] ~= veh then
+                players_last_veh[pid] = veh
+            end
+        end
+    wait() end
+end)
+
+-- Persistent Modder Log Thread
+util.create_thread(function(thr)
+    while true do
+        if !shadow_starting then
+            for players.list(false, true, true) as pid do
+                if players.is_marked_as_modder(pid) then
+                    addModderLog(players.get_rockstar_id(pid), players.get_name(pid))
+                end
+            end
+        end
+    wait(1000) end
+end)

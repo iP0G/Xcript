@@ -1,0 +1,1955 @@
+
+-- Root Online
+local online = menu.list(menu.my_root(), "Online", {"lonline"}, "Online Options")
+
+-- Sub Tabs
+-----------------------
+local mpsession = menu.list(online, "Session", {"lsession"}, "Options for the current session.")
+local spoofing = menu.list(online, "Spoofing", {"lspoofing"}, "Spofing Options.")
+local detections = menu.list(online, "Detections", {"ldetects"}, default_help)
+local dt_msh = menu.list(detections, "Modded Script Host Migration", {""}, "Detects when a modder is forcing Script Host.\nMost accurate when you are Session Host, but still works fine without.")
+local dt_v_gm = menu.list(detections, "Vehicle Godmode", {""}, "Detects if someone is using a vehicle that is in godmode.")
+local dt_t_j = menu.list(detections, "Thunder Join", {""}, "Detects if someone is using thunder join.")
+local dt_sp_v = menu.list(detections, "Spawned Vehicle / Menus", {""}, "Detects if someone is using a spawned Vehicle. Can also detect Menus.")
+local dt_chrx = menu.list(detections, "Cherax User", {""}, "")
+local dt_ul_st = menu.list(detections, "Detect Unlegit Stats", {""}, "Detects Modded Stats.")
+local dt_tp = menu.list(detections, "Teleport", {""}, "Detects if the player has teleported.")
+local dt_spectate = menu.list(detections, "Spectate", {""}, "Detects if someone is spectating you.")
+local dt_superdrive = menu.list(detections, "Super Drive", {""}, "Detects Players using Super Drive.")
+local nm_detections = menu.list(online, "Non-Modder Detections", {""}, "Non-Modder Related Detections")
+local protections = menu.list(online, "Protections", {"lprotects"}, default_help)
+local reactions = menu.list(online, "Reactions", {"lreacts"}, default_help)
+local weapon_react = menu.list(reactions, "Weapons", {"lwreacts"}, "Weapon Related Reactions.")
+local r_join_react = menu.list(reactions, "Remembered Player Join", {""}, "")
+local join_react = menu.list(reactions, "Join Reactions", {"ljreacts"}, "Player Join Reactions with more info.\nAlso doesn't spam you with join reactions when joining a new session.")
+local leave_react = menu.list(reactions, "Leave Reactions", {"llreacts"}, "Player Leave Reactions with more info.")
+local high_ping_react = menu.list(reactions, "High Ping", {""}, "Reactions to Everyone with a high ping\nNote that the average ping is in most Sessions quite high. Expect false positives.")
+-- local explosion_blame_react = menu.list(reactions, "Explosion Blaming", {""}, "(Extra) Reactions to the Explosion Blaming Detection")
+local attacked_modded_react = menu.list(reactions, "Attacked You (Modded)", {""}, "Reactions to Modders that Attacked You (Malicious Script Events etc.).")
+local chat_opts = menu.list(online, "Chat", {""}, "Chat related options.")
+local friend_lists = menu.list(online, "Friend List", {"friends"}, default_help)
+remembered_player_menu = menu.list(online, "Remembered Players", {"lrp"}, default_help)
+local lock_level_opts = menu.list(online, "Lock Level", {""}, default_help)
+
+---------------------
+-- Main
+---------------------
+-- Online
+    -- Session
+
+        -- Become Script Host
+        menu.action(mpsession, "Become Script Host", {"lsh"}, default_help, function()
+            trigger_commands("scripthost")
+        end)
+
+        -- Auto Script Host
+        menu.toggle_loop(mpsession, "Auto Script Host", {"autosh"}, "Automatically makes you script host whenever you're not script host.\n"..default_help, function()
+            local sh
+            if util.is_session_started() and not util.is_session_transition_active() then
+                sh = players.get_script_host()
+                if sh != -1 and sh != nil then
+                    if sh != players.user() and players.exists(sh) then
+                        trigger_commands("scripthost")
+                    end
+                end
+            end
+        end)
+
+        -- Host tools
+        hosttools = menu.list(mpsession, "Host Toolkit", {"lhtools"}, "Tools that can only be used as the Session Host.")
+
+            -- Max Players
+            menu.divider(hosttools, "Max Players")
+            menu.click_slider(hosttools, "Max Players", {"maxplayers"}, "Click to set the max Players for the lobby.\nOnly works as Host.", 1, 32, 32, 1, function(value)
+                if players.get_host() == players.user() then
+                    NETWORK.NETWORK_SESSION_SET_MATCHMAKING_GROUP_MAX(0, value)
+                    notify("Free Slots: ".. NETWORK.NETWORK_SESSION_GET_MATCHMAKING_GROUP_FREE(0))
+                else
+                    notify("You are not the Host.")
+                end
+            end)
+            menu.click_slider(hosttools, "Max Spectators", {"maxspectators"}, "Click to set the max Spectators for the lobby.\nOnly works as Host.", 0, 2, 0, 1, function (value)
+                if players.get_host() == players.user() then
+                    NETWORK.NETWORK_SESSION_SET_MATCHMAKING_GROUP_MAX(4, value)
+                    notify("Free Slots: ".. NETWORK.NETWORK_SESSION_GET_MATCHMAKING_GROUP_FREE(4))
+                else
+                    notify("You are not the Host.")
+                end
+            end)
+
+            -- Block Joins From Spoofed Host Token
+            bj_spoofed_token = menu.list(hosttools, "Block Joins From Spoofed Host Token", {"lbj"}, "Options for Blocking Joins from Players with a Spoofed Host Token.")
+
+            block_joins_spoofed_token = true
+            block_joins_spoofed_token_type = -1
+            block_joins_spoofed_token_excl_stand = false
+            block_joins_spoofed_token_excl_cl = false
+            menu.toggle(bj_spoofed_token, "Block Joins From Spoofed Host Token", {"lblockjoinspoofedtoken"}, "Block Joins from Players with a Spoofed Host Token.", function(on)
+                block_joins_spoofed_token = on
+            end, true)
+
+            menu.list_select(bj_spoofed_token, "Block Method", {""}, "The method of blocking the players join.\nBlock: Host Kicks the player and blocks joins for a few seconds. This shouldn't interfere with other players that are already joining.\n\nBlacklist: Blacklists the player from the lobby as if they were vote kicked. They won't be able to re-join and you won't be able to un-blacklist them.", {"Block", "Blacklist"}, 1, function(i)
+                block_joins_spoofed_token_type = -i
+            end)
+
+            menu.list_select(bj_spoofed_token, "Exclude Stand Users", {""}, "Excludes Stand Users.\n\nTo clarify, this means that players joining with a Spoofed Host Token wont be blocked from joining for a few seconds. However, if the player has already joined you with a spoofed token (in the time since the script has started running) and isn't a Stand User, their join will be blocked instantly.", {"Off", "On", "Also Exclude Co-Loading"}, 1, function(i)
+                pluto_switch i do
+                    case 1:
+                        block_joins_spoofed_token_excl_stand = false
+                        block_joins_spoofed_token_excl_cl = false
+                        break
+                    case 2:
+                        block_joins_spoofed_token_excl_stand = true
+                        block_joins_spoofed_token_excl_cl = false
+                        break
+                    case 3:
+                        block_joins_spoofed_token_excl_stand = true
+                        block_joins_spoofed_token_excl_cl = true
+                        break
+                end
+            end)
+
+            -- Block Joins From Relay
+            block_joins_from_relay = true
+            menu.toggle(hosttools, "Block Joins From Relay", {""}, "", function(on)
+                block_joins_from_relay = on
+            end, true)
+
+            -- Block Joins From VPN
+            block_joins_from_vpn = true
+            menu.toggle(hosttools, "Block Joins From VPN", {""}, "", function(on)
+                block_joins_from_vpn = on
+            end, true)
+
+            -- Block SH Migration
+            menu.toggle_loop(hosttools, "Block Script Host Migration", {"lblockshm"}, "Only works when you're the Host. Doesn't work against Modders.", function()
+                if util.is_session_started() and players.get_host() == players.user() then
+                    NETWORK.NETWORK_PREVENT_SCRIPT_HOST_MIGRATION()
+                end
+            end)
+
+            -- Remove Non-English Speaking
+            menu.toggle_loop(hosttools, "Remove Chinese and Russian", {""}, "Cause no one wants to see a bunch of squares in the chat.", function()
+                if players.get_host() == players.user() then
+                    for players.list(false, false, true) as pid do
+                        local language = players.get_language(pid)
+                        -- 7 9 12
+                        if language == 7 then
+                            notify("Removed Russian Player:\n"..players.get_name(pid))
+                            -- log("Russian", "TEST")
+                            kick(pid, 0, "Chinese/Russian")
+                        end
+                        if language == 9 or language == 12 then
+                            notify("Removed Chinese Player:\n"..players.get_name(pid))
+                            -- log("Chinese", "TEST")
+                            kick(pid, 0, "Chinese/Russian")
+                        end
+                    end
+                end
+            wait(5000) end)
+
+            -- End Session
+            menu.action(hosttools, "Self Destruct", {""}, "End the session for all players; sending them to singleplayer (including yourself).\nShould be self explanatory, but this is unblockable.", function()
+                if NETWORK.NETWORK_CAN_SESSION_END() then
+                    local outcome = NETWORK.NETWORK_SESSION_END(false, true)
+                    local txt
+                    if outcome then
+                        txt = "Ended Session. All players were sent back to singleplayer."
+                    else
+                        txt = "Failed to End Session. (Are you session host?)"
+                    end
+                    notify(txt)
+                    log(txt, "Self Destruct")
+                else
+                    notify("Not in a valid session.")
+                    return
+                end
+            end)
+
+            -- Session Info
+            menu.divider(hosttools, "Session Info")
+            local host_name = menu.readonly(hosttools, "N/A")
+            local script_host_name = menu.readonly(hosttools, "N/A")
+            local players_amount = menu.readonly(hosttools, "N/A")
+
+            util.create_tick_handler(function()
+                local h = players.get_name(players.get_host())
+                local sh = players.get_name(players.get_script_host())
+                menu.set_help_text(hosttools, "Tools that can only be used as the Session Host.\nHost: "..h.."\nScript Host: "..sh)
+                menu.set_menu_name(host_name, "Host: "..h)
+                menu.set_menu_name(script_host_name, "Script Host: "..sh)
+                menu.set_menu_name(players_amount, "Players: "..#players.list())
+            end)
+
+        -- Session Purge / Removals
+            session_purge = menu.list(mpsession, "Purge", {"lpp"}, "Player purge / removal options in your session.")
+
+            sp_excl_stand = false
+            sp_excl_mc = false
+            sp_rem_mc = false
+            sp_rem_am = false
+            sp_rem_al = false
+            sp_rem_vg = false
+            sp_rem_gm = false
+            remember_purged = false
+
+            -- Purge
+            local menu_session_purge_action = menu.action(session_purge, "Purge (0)", {""}, "Purge all players that meet the conditions (Excluding Friends).\nRecommended to be Session Host but not needed.", function()
+                local removed_from_session = ""
+                local i = 0
+                local ktype = 3
+                if remember_purged then ktype = 8 end
+                for players.list() as pid do
+                    local pname = players.get_name(pid)
+                    -- Excludes
+                    if pid == players.user() then goto continue end
+                    if string.find(players.get_tags_string(pid), "F") ~= nil then goto continue end
+                    if sp_excl_stand then
+                        if StandUser(pid, true) then goto continue end
+                    end
+                    if sp_excl_mc then
+                        if IsDetectionPresent(pid, "Manual Classification") then goto continue end
+                    end
+
+                    -- Includes
+                    if sp_rem_mc then
+                        if IsDetectionPresent(pid, "Manual Classification") then
+                            i += 1
+                            kick(pid, ktype, "Purge")
+                            removed_from_session = removed_from_session.."\n"..pname
+                            goto continue
+                        end
+                    end
+                    if sp_rem_am then
+                        if players.is_marked_as_modder(pid) then
+                            i += 1
+                            kick(pid, ktype, "Purge")
+                            removed_from_session = removed_from_session.."\n"..pname
+                            goto continue
+                        end
+                    end
+                    if sp_rem_al then
+                        if string.find(players.get_tags_string(pid), "-") ~= nil then
+                            i += 1
+                            kick(pid, ktype, "Purge")
+                            removed_from_session = removed_from_session.."\n"..pname
+                            goto continue
+                        end
+                    end
+                    if sp_rem_vg then
+                        if string.find(players.get_tags_string(pid), "V") ~= nil and players.is_visible(pid) and not players.is_in_interior(pid) then
+                            i += 1
+                            kick(pid, ktype, "Purge")
+                            removed_from_session = removed_from_session.."\n"..pname
+                            goto continue
+                        end
+                    end
+                    if sp_rem_gm then
+                        if players.is_godmode(pid) and players.is_visible(pid) and not players.is_in_interior(pid) then
+                            i += 1
+                            kick(pid, ktype, "Purge")
+                            removed_from_session = removed_from_session.."\n"..pname
+                            goto continue
+                        end
+                    end
+                    ::continue::
+                end
+                if i > 0 then
+                    removed_from_session = "Purged "..i.." Players:"..removed_from_session
+                    notify(removed_from_session)
+                    if opt_hitmarker_on_kick then
+                        PlaySound(hitmarker_soundfile)
+                        draw_hitmarker()
+                    end
+                else
+                    notify("No players were purged..")
+                end
+            end)
+
+            menu.toggle(session_purge, "Remember Purged Players", {""}, "Adds the purged players to your Removed Players List.", function(on)
+                remember_purged = on
+            end)
+
+            menu.divider(session_purge, "Excludes")
+
+            -- Exclude Stand Users :)
+            menu.toggle(session_purge, "Exclude Stand Users", {""}, ":)", function(on)
+                sp_excl_stand = on
+            end)
+
+            local sp_txt_mc = "To trigger this detection on the player either:\nClick on their name below, or:\nGo to the Players>PlayerName>Misc>Add Manual Classification, OR:\nType lmc in the Command Box"
+            -- Exclude Manual Classification
+            menu.toggle(session_purge, "Exclude Manual Classification", {""}, sp_txt_mc, function(on)
+                sp_excl_mc = on
+            end)
+
+            menu.divider(session_purge, "Removals")
+
+            -- Remove Manual Classification
+            menu.toggle(session_purge, "Remove All Manual Classification", {""}, sp_txt_mc, function(on)
+                sp_rem_mc = on
+            end)
+
+            -- Remove all Modders
+            menu.toggle(session_purge, "Remove All Modders", {""}, "Remove all players classified as a Modder and block them from joining back.", function(on)
+                sp_rem_am = on
+            end)
+
+            -- Remove all Likely Modders
+            menu.toggle(session_purge, "Remove All Likely Modders", {""}, "Remove all players classified as a Likely Modder and block them from joining back.", function(on)
+                sp_rem_al = on
+            end)
+
+            -- Remove all in Vehicle Godmode
+            menu.toggle(session_purge, "Remove All in Vehicle Godmode", {""}, "Remove all players driving an Indestructable Vehicle and block them from joining back.\nKeep in mind this uses the 'V' flag.", function(on)
+                sp_rem_vg= on
+            end)
+
+            menu.toggle(session_purge, "Remove All in Godmode", {""}, "Remove all players in Godmode and block them from joining back.\nThis excludes (most) players inside an interior since it is likely normal behavior for the game and not a modder.", function(on)
+                sp_rem_gm = on
+            end)
+
+            menu.divider(session_purge, "Purge:")
+
+            -- Purge Tick Handler
+            local purge_list = {}
+            util.create_tick_handler(function()
+                local i = 0
+                if not readyInSession() then goto in_transition end
+                for players.list() as pid do
+                    local x = i
+                    -- Excludes
+                    if pid == players.user() then goto continue end
+                    if string.find(players.get_tags_string(pid), "F") ~= nil then goto continue end
+                    if not players.exists(pid) then goto continue end
+                    if sp_excl_stand then
+                        if StandUser(pid, true) then goto continue end
+                    end
+                    if sp_excl_mc then
+                        if IsDetectionPresent(pid, "Manual Classification") then goto continue end
+                    end
+                
+                    -- Includes
+                    if sp_rem_mc then
+                        if IsDetectionPresent(pid, "Manual Classification") then
+                            i += 1
+                            goto continue
+                        end
+                    end
+                    if sp_rem_am then
+                        if players.is_marked_as_modder(pid) then
+                            i += 1
+                            goto continue
+                        end
+                    end
+                    if sp_rem_al then
+                        if string.find(players.get_tags_string(pid), "-") ~= nil then
+                            i += 1
+                            goto continue
+                        end
+                    end
+                    if sp_rem_vg then
+                        if IsDetectionPresent(pid, "Vehicle Godmode") == true and string.find(players.get_tags_string(pid), "V") ~= nil and players.is_visible(pid) and not players.is_in_interior(pid) then
+                            i += 1
+                            goto continue
+                        end
+                    end
+                    if sp_rem_gm then
+                        if players.is_godmode(pid) and players.is_visible(pid) and not players.is_in_interior(pid) then
+                            i += 1
+                            goto continue
+                        end
+                    end
+                    ::continue::
+                    if i ~= x and purge_list[pid] == nil then
+                        local phelp_text = "Classifications:"
+                        for PlayerClassifications(pid) as det do
+                            phelp_text = phelp_text.."\n"..det
+                        end
+                        purge_list[pid] = menu.action(session_purge, players.get_name_with_tags(pid), {""}, phelp_text, function() add_mc_det(pid) end)
+                    elseif i == x and purge_list[pid] ~= nil then
+                        menu.delete(purge_list[pid])
+                        purge_list[pid] = nil
+                    end
+                end
+                menu.set_menu_name(menu_session_purge_action, "Purge ("..i..")")
+                ::in_transition::
+            wait(30) end)
+
+        -- Events
+        mpsession_events_menu = menu.list(mpsession, "Events", {""}, "")
+
+            -- Player Kills
+            player_kills_menu = menu.list(mpsession_events_menu, "Player Kills", {""}, "")
+
+                player_kills_logmsg = true
+
+                player_kill_c_any = false
+                player_kill_c_friends = false
+                player_kill_c_org = false
+
+                player_kill_p_kill = false
+                player_kill_p_kick = false
+
+                menu.action(player_kills_menu, "Print Leaderboard", {""}, "(To console)", function()
+                    local t_list = player_kills_log
+                    local function _gt(p1, p2)
+                        if p1 != nil and p2 != nil then
+                            return p1 > p2
+                        end
+                    end
+                    -- table.sort(t_list)
+                    for pid, kills in t_list do
+                        log(players.get_name(pid)..": "..kills, "Leaderboard")
+                    end
+                end)
+            
+                menu.toggle(player_kills_menu, "Log Each Kill", {""}, "", function(on)
+                    player_kills_logmsg = on
+                end, true)
+
+                menu.divider(player_kills_menu, "Conditions:")
+
+                menu.toggle(player_kills_menu, "Killing Any", {""}, "", function(on)
+                    player_kill_c_any = on
+                end)
+
+                menu.toggle(player_kills_menu, "Killing Friends", {""}, "", function(on)
+                    player_kill_c_friends = on
+                end)
+
+                menu.toggle(player_kills_menu, "Killing Org", {""}, "", function(on)
+                    player_kill_c_org = on
+                end)
+
+                menu.divider(player_kills_menu, "Punishments:")
+
+                menu.toggle(player_kills_menu, "Kill", {""}, "", function(on)
+                    player_kill_p_kill = on
+                end)
+
+                menu.toggle(player_kills_menu, "Kick", {""}, "", function(on)
+                    player_kill_p_kick = on
+                end)
+
+            -- Player Damaging Others
+            player_damage_evt_menu = menu.list(mpsession_events_menu, "Damaging Others", {""}, "")
+
+                player_damage_c_any = false
+                player_damage_c_friends = false
+                player_damage_c_org = false
+
+                player_damage_p_kill = false
+                player_damage_p_kick = false
+
+                menu.divider(player_damage_evt_menu, "Conditions:")
+
+                menu.toggle(player_damage_evt_menu, "Damaging Any", {""}, "", function(on)
+                    player_damage_c_any = on
+                end)
+
+                menu.toggle(player_damage_evt_menu, "Damaging Friends", {""}, "", function(on)
+                    player_damage_c_friends = on
+                end)
+
+                menu.toggle(player_damage_evt_menu, "Damaging Org", {""}, "", function(on)
+                    player_damage_c_org = on
+                end)
+
+                menu.divider(player_damage_evt_menu, "Punishments:")
+
+                menu.toggle(player_damage_evt_menu, "Kill", {""}, "", function(on)
+                    player_damage_p_kill = on
+                end)
+
+                menu.toggle(player_damage_evt_menu, "Kick", {""}, "", function(on)
+                    player_damage_p_kick = on
+                end)
+
+        -- No voice chat
+        menu.toggle_loop(mpsession, "No Voice Chat", {""}, "does?\nUses: NETWORK_CLEAR_VOICE_CHANNEL() every game tick.", function()
+            if not util.is_session_transition_active() then
+                if NETWORK.NETWORK_IS_SESSION_ACTIVE() then
+                    NETWORK.NETWORK_CLEAR_VOICE_CHANNEL()
+                end
+            end
+        end)
+
+        -- Whitelist Session
+        menu.toggle(mpsession, "Whitelist Session", {"lwls"}, "Blocks Joins from non-Whitelisted players.", function(toggled)
+            local whitelist = menu.ref_by_path("Online>Session>Block Joins>From Non-Whitelisted")
+            trigger_command(whitelist, toggled)
+        end)
+
+        -- Show Talking Players
+        menu.toggle_loop(mpsession, "Show Talking Players", {"lshowtalking"}, "Shows a single notification of players currently talking (if any are).", function()
+            if readyInSession() then
+                local notiftxt = "Players Talking:"
+                local ist = false
+                for players.list(true, true, true, true, true) as pid do
+                    if NETWORK.NETWORK_IS_PLAYER_TALKING(pid) then
+                        -- util.draw_debug_text(players.get_name(pid).." is talking", ALIGN_TOP_CENTRE)
+                        notiftxt = notiftxt.."\n"..players.get_name(pid)
+                        ist = true
+                    end
+                end
+                if ist then notify(notiftxt) end
+            end
+        end)
+
+        -- Force Host
+        menu.action(mpsession, "Force Host", {"lforcehost"}, "Forces you to become the Session Host by kicking everyone in the Host queue before you.", function()
+            local curPos = players.get_host_queue_position(players.user())
+            if curPos == 0 then
+                notify("You are Session Host already.")
+                return
+            end
+            local friendsHostQueue = players.get_host_queue(false, true, false)
+            if #friendsHostQueue > 0 then
+                for friendsHostQueue as pid do
+                    if players.get_host_queue_position(pid) < curPos then
+                        notify("Failed, one of the players in the queue is your friend. Forcing Session Host is impossible until your friend re-joins the Session with a higher Host queue index.")
+                        return
+                    end
+                end
+            end
+            local HostQueue = players.get_host_queue(false, false, true)
+            for idx, pid in HostQueue do
+                if idx <= curPos then
+                    trigger_commands("kick"..players.get_name(pid))
+                    wait(100)
+                end
+            end
+            util.create_tick_handler(function()
+                if players.get_host() == players.user() then
+                    notify("Success, you are now the Session Host.")
+                    return false
+                end
+                wait(500)
+            end)
+        end)
+
+    -- Spoofing
+
+        menu.toggle(spoofing, "Spoof Assets", {"lspoofass"}, "Spoof Session Assets.", function(toggled)
+            trigger_commands("extratoggle "..toggled)
+        end)
+
+        menu.toggle(spoofing, "Xcript Matchmaking", {"lmm"}, "Spoof Session Assets so you'll only be able to play with me (or other Xcript users).", function(toggled)
+            trigger_commands("extratoggle "..toggled.."; resetassetchecksum; extravalue 10113110")
+        end)
+
+        -- Spoof Session
+        menu.toggle(spoofing, "Spoof Session", {"lspoofsession"}, "Enable Session Spoofing. No one will be able to Join, Track or Spectate you.", function(toggled)
+            local spoof_ses = menu.ref_by_path("Online>Spoofing>Session Spoofing>Hide Session>Story Mode")
+            local unspoof_ses = menu.ref_by_path("Online>Spoofing>Session Spoofing>Hide Session>Disabled")
+            if menu.get_edition() == 3 then
+                if toggled then
+                    trigger_command(spoof_ses)
+                else
+                    trigger_command(unspoof_ses)
+                end
+            else
+                notify("You need Ultimate in order to do that!")
+            end
+        end)
+
+    -- Detections
+
+        -- Detect Other Xcript Users
+        menu.toggle(detections, "Xcript User Identification", {""}, "(XUID)", function(on)
+            XUID_ON = on
+            DETECT_XCRIPT = on
+            if !on then
+                for _XcriptUser as flag do
+                    PED.SET_PED_CONFIG_FLAG(players.user_ped(), flag, false)
+                end
+            end
+        end, true)
+
+        if dev_vers and private_vers and pspec_0 then
+            pmfunc_1(detections)
+        end
+
+        -- Include Friends in reactions
+        menu.toggle(detections, "Include Friends in Reactions", {""}, "", function(on)
+            include_f_d_reacts = on
+        end)
+
+        -- Include Friends in reactions
+        menu.toggle(detections, "Include Friends in Notifications", {""}, "", function(on)
+            include_f_d_notifs = on
+        end)
+
+        -- Super Drive
+        dt_superdrive_notif = false
+        dt_superdrive_console = false
+        dt_superdrive_chat = false
+        dt_superdrive_tchat = false
+        dt_superdrive_to = false
+        dt_superdrive_kick = false
+        dt_superdrive_crash = false
+        menu.toggle_loop(dt_superdrive, "Super Drive", {"ldtsudr"}, "Detects Players using Super Drive.", function()
+            for players.list() as pid do
+                local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                local vehicle = PED.GET_VEHICLE_PED_IS_USING(ped)
+                local veh_speed = (ENTITY.GET_ENTITY_SPEED(vehicle)* 3.6)
+                local vclass = VEHICLE.GET_VEHICLE_CLASS(vehicle)
+                if vclass != 15 and vclass != 16 and veh_speed >= 320 and (players.get_vehicle_model(pid) != joaat("oppressor") or players.get_vehicle_model(pid) != joaat("oppressor2")) then
+                    local driver = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, -1))
+                    if not IsDetectionPresent(driver, "Super Drive") then
+                        players.add_detection(driver, "Super Drive", 7, 50)
+                        if driver ~= players.user() then
+                            local reason = "is using Super Drive"
+                            detect_n_r(driver, dt_superdrive_notif, dt_superdrive_console, dt_superdrive_chat, dt_superdrive_tchat, dt_superdrive_to, dt_superdrive_kick, dt_superdrive_crash, reason)
+                        end
+                    end
+                    break
+                end
+            wait(10) end
+        wait(1000) end)
+
+        menu.divider(dt_superdrive, "Notifications")
+        menu.toggle(dt_superdrive, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_superdrive_notif = on
+        end)
+        menu.toggle(dt_superdrive, "Write to Console", {""}, "", function(on)
+            dt_superdrive_console = on
+        end)
+        menu.toggle(dt_superdrive, "Announce in Chat", {""}, "", function(on)
+            dt_superdrive_chat = on
+        end)
+        menu.toggle(dt_superdrive, "Announce in Team Chat", {""}, "", function(on)
+            dt_superdrive_tchat = on
+        end)
+
+        menu.divider(dt_superdrive, "Reactions")
+        menu.toggle(dt_superdrive, "Kick", {""}, "", function(on)
+            dt_superdrive_kick = on
+        end)
+        menu.toggle(dt_superdrive, "Crash", {""}, "", function(on)
+            dt_superdrive_crash = on
+        end)
+        menu.toggle(dt_superdrive, "Timeout", {""}, "", function(on)
+            dt_superdrive_to = on
+        end)
+
+        -- Spectate
+        dt_spectate_notif = false
+        dt_spectate_console = false
+        dt_spectate_chat = false
+        dt_spectate_tchat = false
+        dt_spectate_to = false
+        dt_spectate_kick = false
+        dt_spectate_crash = false
+        menu.toggle_loop(dt_spectate, "Spectate", {"ldtspec"}, "Detects if someone is spectating you.", function()
+            for players.list(false, true, true, true, true) as pid do
+                local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                local cam_dist = v3.distance(players.get_position(players.user()), players.get_cam_pos(pid))
+                local ped_dist = v3.distance(players.get_position(players.user()), players.get_position(pid))
+                if cam_dist < 20.0 and ped_dist > 75.0 and not PED.IS_PED_DEAD_OR_DYING(ped) and not NETWORK.NETWORK_IS_PLAYER_FADING(pid) then
+                    notify(players.get_name(pid).." is watching you ")
+                    if not IsDetectionPresent(pid, "Spectated You") then
+                        players.add_detection(pid, "Spectated You", 7, 0)
+                        if pid ~= players.user() then
+                            local reason = "Spectated You"
+                            detect_n_r(pid, dt_spectate_notif, dt_spectate_console, dt_spectate_chat, dt_spectate_tchat, dt_spectate_to, dt_spectate_kick, dt_spectate_crash, reason)
+                        end
+                    end
+                    break
+                end
+            end
+        wait(1000) end)
+
+        menu.divider(dt_spectate, "Notifications")
+        menu.toggle(dt_spectate, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_spectate_notif = on
+        end)
+        menu.toggle(dt_spectate, "Write to Console", {""}, "", function(on)
+            dt_spectate_console = on
+        end)
+        menu.toggle(dt_spectate, "Announce in Chat", {""}, "", function(on)
+            dt_spectate_chat = on
+        end)
+        menu.toggle(dt_spectate, "Announce in Team Chat", {""}, "", function(on)
+            dt_spectate_tchat = on
+        end)
+
+        menu.divider(dt_spectate, "Reactions")
+        menu.toggle(dt_spectate, "Kick", {""}, "", function(on)
+            dt_spectate_kick = on
+        end)
+        menu.toggle(dt_spectate, "Crash", {""}, "", function(on)
+            dt_spectate_crash = on
+        end)
+        menu.toggle(dt_spectate, "Timeout", {""}, "", function(on)
+            dt_spectate_to = on
+        end)
+
+        -- Teleport
+        dt_tp_notif = false
+        dt_tp_console = false
+        dt_tp_chat = false
+        dt_tp_tchat = false
+        dt_tp_to = false
+        dt_tp_kick = false
+        dt_tp_crash = false
+        menu.toggle_loop(dt_tp, "Teleport", {"ldttp"}, "Detects if the player has teleported.", function()
+            for players.list() as pid do
+                local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                if not NETWORK.NETWORK_IS_PLAYER_FADING(pid) and ENTITY.IS_ENTITY_VISIBLE(ped) and not PED.IS_PED_DEAD_OR_DYING(ped) then
+                    local oldpos = players.get_position(pid)
+                    wait(1000)
+                    local currentpos = players.get_position(pid)
+                    if get_spawn_state(pid) != 0 then
+                        for i, interior in interior_stuff do
+                            if v3.distance(oldpos, currentpos) > 500 and oldpos.x != currentpos.x and oldpos.y != currentpos.y and oldpos.z != currentpos.z then
+                                wait(500)
+                                if get_interior_player_is_in(pid) == interior and PLAYER.IS_PLAYER_PLAYING(pid) and players.exists(pid) then
+                                    if not IsDetectionPresent(pid, "Teleport") then
+                                        players.add_detection(pid, "Teleport", 7, 50)
+                                        if pid ~= players.user() then
+                                            local reason = "is using Teleport"
+                                            detect_n_r(pid, dt_tp_notif, dt_tp_console, dt_tp_chat, dt_tp_tchat, dt_tp_to, dt_tp_kick, dt_tp_crash, reason)
+                                        end
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+        menu.divider(dt_tp, "Notifications")
+        menu.toggle(dt_tp, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_tp_notif = on
+        end)
+        menu.toggle(dt_tp, "Write to Console", {""}, "", function(on)
+            dt_tp_console = on
+        end)
+        menu.toggle(dt_tp, "Announce in Chat", {""}, "", function(on)
+            dt_tp_chat = on
+        end)
+        menu.toggle(dt_tp, "Announce in Team Chat", {""}, "", function(on)
+            dt_tp_tchat = on
+        end)
+
+        menu.divider(dt_tp, "Reactions")
+        menu.toggle(dt_tp, "Kick", {""}, "", function(on)
+            dt_tp_kick = on
+        end)
+        menu.toggle(dt_tp, "Crash", {""}, "", function(on)
+            dt_tp_crash = on
+        end)
+        menu.toggle(dt_tp, "Timeout", {""}, "", function(on)
+            dt_tp_to = on
+        end)
+
+        -- Probably just delete this.
+
+        -- -- Drones & Missiles
+        -- local dt_m_and_d = menu.list(detections, "Missile and Drone Detection (off)", {""}, "Drone and Missile Detection.")
+        -- menu.toggle_loop(dt_m_and_d, "Missile and Drone Detection", {"ldtmd"}, "Drone and Missile Detection.", function()
+        --     menu.set_menu_name(dt_m_and_d, "Missile and Drone Detection (on)")
+        --     if not util.is_session_transition_active() then
+        --         if NETWORK.NETWORK_IS_SESSION_ACTIVE() then
+        --             for player = 0, 32 do addBlipForPlayerDrone(player) end
+        --         end
+        --     end
+        --     end, function()
+        --         for blips as i do
+        --             removeBlipIndex(i)
+        --         end
+        --         notificationBits = 0
+        --         nearbyNotificationBits = 0
+        -- end,
+        -- function()
+        --     menu.set_menu_name(dt_m_and_d, "Missile and Drone Detection (off)")
+        -- end)
+
+        -- Stat Detection
+        dt_ul_st_notif = false
+        dt_ul_st_console = false
+        dt_ul_st_chat = false
+        dt_ul_st_tchat = false
+        dt_ul_st_to = false
+        dt_ul_st_kick = false
+        dt_ul_st_crash = false
+        menu.toggle_loop(dt_ul_st, "Detect Unlegit Stats", {"ldtuls"}, "Detects Modded Stats.", function()
+            for players.list() as pid do
+                local rank = players.get_rank(pid)
+                local money = players.get_money(pid)
+                local kills = players.get_kills(pid)
+                local kdratio = players.get_kd(pid)
+                if players.are_stats_ready(pid) then
+                    local det_tr = false
+                    local det_r
+                    if kdratio < 0 or kdratio > 21 then
+                        if not IsDetectionPresent(pid, "Unlegit Stats (K/D)") then
+                            det_r = "Unlegit Stats (K/D)"
+                            players.add_detection(pid, det_r, 7, 50)
+                            det_tr = true
+                        end
+                    end
+                    if kills > 150000 then
+                        if not IsDetectionPresent(pid, "Unlegit Stats (Kills)") then
+                            det_r = "Unlegit Stats (Kills)"
+                            players.add_detection(pid, det_r, 7, 20)
+                            det_tr = true
+                        end
+                    end
+                    if rank > 1500 then
+                        if not IsDetectionPresent(pid, "Unlegit Stats (Rank)") then
+                            det_r = "Unlegit Stats (Rank)"
+                            players.add_detection(pid, det_r, 7, 20)
+                            det_tr = true
+                        end
+                    end
+                    if money > 1500000000 then
+                        if not IsDetectionPresent(pid, "Unlegit Stats (Money)") then
+                            det_r = "Unlegit Stats (Money)"
+                            players.add_detection(pid, det_r, 7, 20)
+                            det_tr = true
+                        end
+                    end
+                    wait(1000)
+                end
+                if det_tr and pid ~= players.user() then
+                    local reason = "triggered a detection: " .. det_r
+                    detect_n_r(pid, dt_ul_st_notif, dt_ul_st_console, dt_ul_st_chat, dt_ul_st_tchat, dt_ul_st_to, dt_ul_st_kick, dt_ul_st_crash, reason)
+                end
+            end
+        wait(5000) end)
+
+        menu.divider(dt_ul_st, "Notifications")
+        menu.toggle(dt_ul_st, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_ul_st_notif = on
+        end)
+        menu.toggle(dt_ul_st, "Write to Console", {""}, "", function(on)
+            dt_ul_st_console = on
+        end)
+        menu.toggle(dt_ul_st, "Announce in Chat", {""}, "", function(on)
+            dt_ul_st_chat = on
+        end)
+        menu.toggle(dt_ul_st, "Announce in Team Chat", {""}, "", function(on)
+            dt_ul_st_tchat = on
+        end)
+
+        menu.divider(dt_ul_st, "Reactions")
+        menu.toggle(dt_ul_st, "Kick", {""}, "", function(on)
+            dt_ul_st_kick = on
+        end)
+        menu.toggle(dt_ul_st, "Crash", {""}, "", function(on)
+            dt_ul_st_crash = on
+        end)
+        menu.toggle(dt_ul_st, "Timeout", {""}, "", function(on)
+            dt_ul_st_to = on
+        end)
+
+        -- Spawned Vehicle / Menu
+        dt_sp_v_notif = false
+        dt_sp_v_console = false
+        dt_sp_v_chat = false
+        dt_sp_v_tchat = false
+        dt_sp_v_to = false
+        dt_sp_v_kick = false
+        dt_sp_v_crash = false
+        menu.toggle_loop(dt_sp_v, "Spawned Vehicle / Menus", {"ldtsv"}, "Detects if someone is using a spawned Vehicle. Can also detect Menus.", function()
+            for players.list() as pid do
+                local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                local vehicle = PED.GET_VEHICLE_PED_IS_USING(ped)
+                local hash = players.get_vehicle_model(pid)
+                local plate_text = VEHICLE.GET_VEHICLE_NUMBER_PLATE_TEXT(vehicle)
+                local bitset = DECORATOR.DECOR_GET_INT(vehicle, "MPBitset")
+                local plyveh = DECORATOR.DECOR_GET_INT(vehicle, "Player_Vehicle")
+                local pegasusveh = DECORATOR.DECOR_GET_BOOL(vehicle, "CreatedByPegasus")
+                for veh_things as veh do
+                    if hash == joaat(veh) and DECORATOR.DECOR_GET_INT(vehicle, "MPBitset") == 8 then
+                        return 
+                    end
+                end
+                if players.get_vehicle_model(pid) ~= 0 and not TASK.GET_IS_TASK_ACTIVE(ped, 160) then
+                    local driver = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, -1))
+                    if players.get_name(driver) ~= "InvalidPlayer" and not pegasusveh and pid == driver and not players.is_in_interior(pid) then
+                        local det_tr = false
+                        local det_r = ""
+                        if bitset == 1024 then
+                            util.draw_debug_text(players.get_name(driver).." is a 2Take1 User")
+                            if not IsDetectionPresent(pid, "2Take1 User") then
+                                det_r = "2Take1"
+                                players.add_detection(pid, det_r.." User", 7)
+                                det_tr = true
+                            end
+                        elseif plate_text == " TERROR " then
+                            util.draw_debug_text(players.get_name(driver).." is a Terror User")
+                            if not IsDetectionPresent(pid, "Terror User") then
+                                det_r = "Terror"
+                                players.add_detection(pid, det_r.." User", 7)
+                                det_tr = true
+                            end
+                        elseif plate_text == " MXMENU " then
+                            util.draw_debug_text(players.get_name(driver).." is a MXMenu User")
+                            if not IsDetectionPresent(pid, "MXMenu User") then
+                                det_r = "MXMenu"
+                                players.add_detection(pid, det_r.." User", 7)
+                                det_tr = true
+                            end
+                        elseif plate_text == "  FATE  " then
+                            util.draw_debug_text(players.get_name(driver).." is a Fate User")
+                            if not IsDetectionPresent(pid, "Fate User") then
+                                det_r = "Fate"
+                                players.add_detection(pid, det_r.." User", 7)
+                                det_tr = true
+                            end
+                        elseif bitset == 8 or plate_text == "46EEK572" then
+                            local used_vehicle = lang.get_localised(util.get_label_text(players.get_vehicle_model(pid)))
+                            util.draw_debug_text(players.get_name(driver).." is using a spawned vehicle ".."("..used_vehicle..")")
+                            if not IsDetectionPresent(pid, "Spawned Vehicle") then
+                                players.add_detection(pid, "Spawned Vehicle", 7, 50)
+                                det_r = "a Spawned Vehicle"
+                                det_tr = true
+                            end
+                        end
+                        if det_tr and pid ~= players.user() then
+                            local reason = "is using "..det_r.." (SV)"
+                            detect_n_r(pid, dt_sp_v_notif, dt_sp_v_console, dt_sp_v_chat, dt_sp_v_tchat, dt_sp_v_to, dt_sp_v_kick, dt_sp_v_crash, reason)
+                        end
+                    end
+                end
+            end
+        end)
+
+        menu.divider(dt_sp_v, "Notifications")
+        menu.toggle(dt_sp_v, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_sp_v_notif = on
+        end)
+        menu.toggle(dt_sp_v, "Write to Console", {""}, "", function(on)
+            dt_sp_v_console = on
+        end)
+        menu.toggle(dt_sp_v, "Announce in Chat", {""}, "", function(on)
+            dt_sp_v_chat = on
+        end)
+        menu.toggle(dt_sp_v, "Announce in Team Chat", {""}, "", function(on)
+            dt_sp_v_tchat = on
+        end)
+
+        menu.divider(dt_sp_v, "Reactions")
+        menu.toggle(dt_sp_v, "Kick", {""}, "", function(on)
+            dt_sp_v_kick = on
+        end)
+        menu.toggle(dt_sp_v, "Crash", {""}, "", function(on)
+            dt_sp_v_crash = on
+        end)
+        menu.toggle(dt_sp_v, "Timeout", {""}, "", function(on)
+            dt_sp_v_to = on
+        end)
+
+        -- Cherax Menu
+        dt_chrx_opt = true
+        dt_chrx_notif = false
+        dt_chrx_console = false
+        dt_chrx_chat = false
+        dt_chrx_tchat = false
+        dt_chrx_to = false
+        dt_chrx_kick = false
+        dt_chrx_crash = false
+        menu.toggle(dt_chrx, "Cherax User", {""}, "Detects some Cherax Users, not all.", function(on)
+            dt_chrx_opt = on
+        end, true)
+
+        menu.divider(dt_chrx, "Notifications")
+        menu.toggle(dt_chrx, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_chrx_notif = on
+        end)
+        menu.toggle(dt_chrx, "Write to Console", {""}, "", function(on)
+            dt_chrx_console = on
+        end)
+        menu.toggle(dt_chrx, "Announce in Chat", {""}, "", function(on)
+            dt_chrx_chat = on
+        end)
+        menu.toggle(dt_chrx, "Announce in Team Chat", {""}, "", function(on)
+            dt_chrx_tchat = on
+        end)
+
+        menu.divider(dt_chrx, "Reactions")
+        menu.toggle(dt_chrx, "Kick", {""}, "", function(on)
+            dt_chrx_kick = on
+        end)
+        menu.toggle(dt_chrx, "Crash", {""}, "", function(on)
+            dt_chrx_crash = on
+        end)
+        menu.toggle(dt_chrx, "Timeout", {""}, "", function(on)
+            dt_chrx_to = on
+        end)
+
+        function dt_chrx_handle(pid)
+            if pid != players.user() and !IsDetectionPresent(pid, "Cherax User") then
+                players.add_detection(pid, "Cherax User", 7, 100)
+                detect_n_r(pid, dt_chrx_notif, dt_chrx_console, dt_chrx_chat, dt_chrx_tchat, dt_chrx_to, dt_chrx_kick, dt_chrx_crash, "is a Cherax User")
+            end
+        end
+
+        -- Thunder Join
+        local dt_t_j_notif = false
+        local dt_t_j_console = false
+        local dt_t_j_chat = false
+        local dt_t_j_tchat = false
+        local dt_t_j_to = false
+        local dt_t_j_kick = false
+        local dt_t_j_crash = false
+        menu.toggle_loop(dt_t_j, "Thunder Join", {"ldttj"}, "Detects if someone is using thunder join.", function()
+            if readyInSession() then
+                for players.list() as pid do
+                    if get_spawn_state(pid) == 0 and players.get_script_host() == pid then
+                        if not IsDetectionPresent(pid, "Thunder Join") then
+                            players.add_detection(pid, "Thunder Join", 7)
+                            local pname = players.get_name(pid)
+                            if pid ~= players.user() then
+                                local reason = "is using Thunder Join"
+                                detect_n_r(pid, dt_t_j_notif, dt_t_j_console, dt_t_j_chat, dt_t_j_tchat, dt_t_j_to, dt_t_j_kick, dt_t_j_crash, reason)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+        menu.divider(dt_t_j, "Notifications")
+        menu.toggle(dt_t_j, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_t_j_notif = on
+        end)
+        menu.toggle(dt_t_j, "Write to Console", {""}, "", function(on)
+            dt_t_j_console = on
+        end)
+        menu.toggle(dt_t_j, "Announce in Chat", {""}, "", function(on)
+            dt_t_j_chat = on
+        end)
+        menu.toggle(dt_t_j, "Announce in Team Chat", {""}, "", function(on)
+            dt_t_j_tchat = on
+        end)
+
+        menu.divider(dt_t_j, "Reactions")
+        menu.toggle(dt_t_j, "Kick", {""}, "", function(on)
+            dt_t_j_kick = on
+        end)
+        menu.toggle(dt_t_j, "Crash", {""}, "", function(on)
+            dt_t_j_crash = on
+        end)
+        menu.toggle(dt_t_j, "Timeout", {""}, "", function(on)
+            dt_t_j_to = on
+        end)
+
+        -- Vehicle Godmode
+        dt_v_gm_notif = false
+        dt_v_gm_console = false
+        dt_v_gm_chat = false
+        dt_v_gm_tchat = false
+        dt_v_gm_to = false
+        dt_v_gm_kick = false
+        dt_v_gm_crash = false
+        menu.toggle_loop(dt_v_gm, "Vehicle Godmode", {"ldtvg"}, "Detects if someone is using a vehicle that is in godmode.\nUses the Default V flag.", function()
+            for players.list() as pid do
+                local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                local vehicle = PED.GET_VEHICLE_PED_IS_USING(ped)
+                local driver = NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, -1))
+                if pid ~= players.user() and vehicle == player_cur_car then goto skipthis end
+                if string.find(players.get_tags_string(pid), "V") ~= nil and ENTITY.GET_ENTITY_SPEED(ped) > 5 and not players.is_in_interior(pid) and pid == driver then
+                    util.draw_debug_text(players.get_name(driver) ..  " is in vehicle godmode  (2)")
+                    if not IsDetectionPresent(pid, "Vehicle Godmode (2)") then
+                        players.add_detection(pid, "Vehicle Godmode (2)", 7, 75)
+                        if pid ~= players.user() then
+                            local reason = "is in Vehicle Godmode"
+                            detect_n_r(pid, dt_v_gm_notif, dt_v_gm_console, dt_v_gm_chat, dt_v_gm_tchat, dt_v_gm_to, dt_v_gm_kick, dt_v_gm_crash, reason)
+                        end
+                    end
+                    break
+                end
+                if PED.IS_PED_IN_ANY_VEHICLE(ped, false) then
+                    if not ENTITY.GET_ENTITY_CAN_BE_DAMAGED(vehicle) and not NETWORK.NETWORK_IS_PLAYER_FADING(pid) and ENTITY.IS_ENTITY_VISIBLE(ped) 
+                    and players.are_stats_ready(pid) and not players.is_in_interior(pid) and pid == driver then
+                        util.draw_debug_text(players.get_name(driver) ..  " is in vehicle godmode (1)")
+                        if not IsDetectionPresent(pid, "Vehicle Godmode (1)") then
+                            players.add_detection(pid, "Vehicle Godmode (1)", 7, 25)
+                            if pid ~= players.user() then
+                                local reason = "is in Vehicle Godmode"
+                                detect_n_r(pid, dt_v_gm_notif, dt_v_gm_console, dt_v_gm_chat, dt_v_gm_tchat, dt_v_gm_to, dt_v_gm_kick, dt_v_gm_crash, reason)
+                            end
+                        end
+                        break
+                    end
+                end
+                ::skipthis::
+            end 
+        end)
+
+        menu.divider(dt_v_gm, "Notifications")
+        menu.toggle(dt_v_gm, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_v_gm_notif = on
+        end)
+        menu.toggle(dt_v_gm, "Write to Console", {""}, "", function(on)
+            dt_v_gm_console = on
+        end)
+        menu.toggle(dt_v_gm, "Announce in Chat", {""}, "", function(on)
+            dt_v_gm_chat = on
+        end)
+        menu.toggle(dt_v_gm, "Announce in Team Chat", {""}, "", function(on)
+            dt_v_gm_tchat = on
+        end)
+
+        menu.divider(dt_v_gm, "Reactions")
+        menu.toggle(dt_v_gm, "Kick", {""}, "", function(on)
+            dt_v_gm_kick = on
+        end)
+        menu.toggle(dt_v_gm, "Crash", {""}, "", function(on)
+            dt_v_gm_crash = on
+        end)
+        menu.toggle(dt_v_gm, "Timeout", {""}, "", function(on)
+            dt_v_gm_to = on
+        end)
+
+        -- Modded Script Host Migration
+        recentsh = {}
+        bshm_on = nil
+        dt_msh_when_host = true
+        dt_msh_notif = false
+        dt_msh_console = false
+        dt_msh_chat = false
+        dt_msh_tchat = false
+        dt_msh_to = false
+        dt_msh_kick = false
+        dt_msh_crash = false
+        menu.toggle_loop(dt_msh, "Modded Script Host Migration", {"ldtmsh"}, "Detects and notifies when a modder is forcing Script Host.\nMost accurate when you are Session Host, but still works fine without.", function()
+            if not bshm_on then
+                trigger_commands("lblockshm on")
+                bshm_on = true
+            end
+            
+            if (dt_msh_when_host and players.get_host() == players.user()) or not dt_msh_when_host then
+                local newsh = shmgdt()
+                if newsh ~= nil then
+                    addrsh(newsh)
+                end
+            end
+        end, function()
+            bshm_on = false
+        end)
+
+        menu.toggle(dt_msh, "Only When Host", {""}, "Because this makes it a LOT more accurate.", function(on)
+            dt_msh_when_host = on
+        end, true)
+
+        menu.divider(dt_msh, "Notifications")
+        menu.toggle(dt_msh, "Notify", {""}, "Keep in mind, you'll get 2 notifications if you have notifications for any detection on already :)", function(on)
+            dt_msh_notif = on
+        end)
+        menu.toggle(dt_msh, "Write to Console", {""}, "", function(on)
+            dt_msh_console = on
+        end)
+        menu.toggle(dt_msh, "Announce in Chat", {""}, "", function(on)
+            dt_msh_chat = on
+        end)
+        menu.toggle(dt_msh, "Announce in Team Chat", {""}, "", function(on)
+            dt_msh_tchat = on
+        end)
+
+        menu.divider(dt_msh, "Reactions")
+        menu.toggle(dt_msh, "Kick", {""}, "This one is good for establishing dominance over other modders in the lobby if you have Auto Script Host enabled.", function(on)
+            dt_msh_kick = on
+        end)
+        menu.toggle(dt_msh, "Crash", {""}, "", function(on)
+            dt_msh_crash = on
+        end)
+        menu.toggle(dt_msh, "Timeout", {""}, "", function(on)
+            dt_msh_to = on
+        end)
+
+        -- Modded Script Host Migration Functions
+
+        function addrsh(sh)
+            if recentsh[sh] ~= recentsh[sh] or recentsh[sh] == nil then
+                recentsh[sh] = 0
+            end
+            recentsh[sh] = recentsh[sh] + 1
+            local istr = false
+            if players.get_host() == players.user() then
+                if recentsh[sh] >= 2 then
+                    -- log(players.get_name(sh) ..  " is forcing Script Host Migration")
+                    if not IsDetectionPresent(sh, "Modded Script Host Migration") then
+                        players.add_detection(sh, "Modded Script Host Migration", 7, 75)
+                        istr = true
+                    end
+                end
+            else
+                if recentsh[sh] >= 3 then
+                    -- log(players.get_name(sh) ..  " is likely forcing Script Host Migration")
+                    if not IsDetectionPresent(sh, "*Modded Script Host Migration") then
+                        players.add_detection(sh, "*Modded Script Host Migration", 7, 50)
+                        istr = true
+                    end
+                end
+            end
+            if istr == true and sh ~= players.user() then
+                local reason = "is forcing Script Host Migration"
+                detect_n_r(sh, dt_msh_notif, dt_msh_console, dt_msh_chat, dt_msh_tchat, dt_msh_to, dt_msh_kick, dt_msh_crash, reason)
+            end
+        end
+
+        -- Script Host Migration Detect Function, meant to be called in a loop.
+        local sh_shmgdt
+        function shmgdt()
+            local sh -- Script Host
+            if util.is_session_started() then
+                if players.get_script_host() ~= -1 and players.get_script_host() ~= nil then
+                    sh = players.get_script_host()
+                    -- if sh_shmgdt ~= sh and sh_shmgdt ~= nil then return sh end
+                    if sh_shmgdt == nil or sh_shmgdt == -1 then sh_shmgdt = sh return nil end
+                    -- util.yield()
+                    if sh ~= -1 and sh ~= nil then
+                        -- local new_sh = players.get_script_host()
+                        if sh ~= sh_shmgdt then
+                            if players.exists(sh) then
+                                sh_shmgdt = sh
+                                return sh
+                            else
+                                return nil
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- End Modded Script Host Migration Functions
+
+    -- Non-Modder Detections
+
+        -- GeoIP Reactions
+        geoip_sec_check = true
+        geoip_within_x_miles = 0
+        menu.toggle(nm_detections, "Secondary VPN/Proxy Check", {""}, "Triggers a Non-Modder Detection if the player is using a VPN/Proxy, on a Cellular connection, or Coloacted connection.", function(on)
+            geoip_sec_check = on
+        end, true)
+
+        menu.slider(nm_detections, "Closer Than", {"lgeoipct"}, "Triggers a Non-Modder Detection if the player is closer than X miles.", 0, 200, 0, 10, function(val)
+            geoip_within_x_miles = val
+        end)
+
+        -- Being Locked Onto
+        menu.toggle_loop(nm_detections, "Vehicle Lockon Warning", {""}, "Notifies you when your vehicle is being locked onto.", function()
+            if readyInSession() then
+                if PED.IS_PED_IN_VEHICLE(players.user_ped(), player_cur_car) then
+                    local lstate = VEHICLE.GET_VEHICLE_HOMING_LOCKEDONTO_STATE(0)
+                    if lstate == 1 then
+                        nmtfy("Your Vehicle is being locked onto.")
+                    elseif lstate == 2 then
+                        nmtfy("Vehicle Lockon Warning")
+                    end
+                end
+            end
+            wait(10)
+        end)
+
+        menu.toggle_loop(nm_detections, "At Office Cargo Computer", {""}, "Notifies you when a player is sitting at the computer used for warehouse cargo missions in their office tower (or whatever its called).\nA good indication that they are about to start a cargo mission.", function()
+            if readyInSession() then
+                for players.list() as pid do
+                    pcfdt(pid, 295, players.get_name(pid).." is at an Office Cargo Computer.")
+                end
+            end
+            wait(10)
+        end)
+
+        -- unrelated try 292 freeze position
+
+    -- Protections
+
+        -- Anti Crash
+        menu.toggle(protections, "Panic", {"ohshit"}, "Will render GTA:O uncrashable, but the Gameplay will become unplayable.", function(toggled)
+            local BlockNetEvents = menu.ref_by_path("Online>Protections>Events>Raw Network Events>Any Event>Block>Enabled")
+            local UnblockNetEvents = menu.ref_by_path("Online>Protections>Events>Raw Network Events>Any Event>Block>Disabled")
+            local BlockIncSyncs = menu.ref_by_path("Online>Protections>Syncs>Incoming>Any Incoming Sync>Block>Enabled")
+            local UnblockIncSyncs = menu.ref_by_path("Online>Protections>Syncs>Incoming>Any Incoming Sync>Block>Disabled")
+            if toggled then
+                trigger_commands("desyncall on; anticrashcamera on")
+                trigger_command(BlockIncSyncs)
+                trigger_command(BlockNetEvents)
+            else
+                trigger_commands("desyncall off; anticrashcamera off")
+                trigger_command(UnblockIncSyncs)
+                trigger_command(UnblockNetEvents)
+            end
+        end)
+
+    -- Reactions
+        -- Weapon
+        menu.divider(weapon_react, "Weapon Reactions")
+        local explo_reactions = 1
+        menu.list_select(weapon_react, "Explo Sniper Reaction", {""}, "", anti_explo_sniper, 1, function(index)
+            explo_reactions = index
+        end)
+        menu.toggle_loop(weapon_react, "Anti Explo Sniper", {""}, "", function()
+            for players.list(true, true, true, true, true) as pid do
+                local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                if WEAPON.IS_PED_ARMED(ped, 4) and PLAYER.IS_PLAYER_FREE_AIMING(ped) then
+                    if WEAPON.HAS_PED_GOT_WEAPON(ped, 177293209) and WEAPON.HAS_PED_GOT_WEAPON_COMPONENT(ped, 177293209, 2313935527) then
+                        if explo_reactions == 1 then
+                            WEAPON.REMOVE_WEAPON_FROM_PED(ped, 177293209)
+                            notify("Removed Weapon From Explo Sniper User\n"..players.get_name(pid).." / "..players.get_rockstar_id(pid))
+                            wait(5000)
+                        elseif explo_reactions == 2 then
+                            WEAPON.REMOVE_WEAPON_COMPONENT_FROM_PED(ped, 177293209, 2313935527)
+                            notify("Removed Attachment From Explo Sniper User\n"..players.get_name(pid).." / "..players.get_rockstar_id(pid))
+                            wait(5000)
+                        elseif explo_reactions == 3 then
+                            util.draw_debug_text(players.get_name(pid).." Is using the Explo Sniper.")
+                        elseif explo_reactions == 4 then
+                            trigger_commands("explode"..players.get_name(pid))
+                            notify("Killed Explo Sniper User\n"..players.get_name(pid).." / "..players.get_rockstar_id(pid))
+                            wait(5000)
+                        elseif explo_reactions == 5 then
+                            notify("Kicked Explo Sniper User\n"..players.get_name(pid).." / "..players.get_rockstar_id(pid))
+                            trigger_commands("kick"..players.get_name(pid))
+                            wait(5000)
+                        end
+                    end
+                end
+            end
+        end)
+
+        -- Remembered Player Join
+        notify_on_rp_join = true
+        log_on_rp_join = true
+        block_rp_join = false
+
+        menu.toggle(r_join_react, "Notification", {""}, "", function(on)
+            notify_on_rp_join = on
+        end, true)
+
+        menu.toggle(r_join_react, "Log", {""}, "", function(on)
+            log_on_rp_join = on
+        end, true)
+
+        menu.toggle(r_join_react, "Block Join", {""}, "", function(on)
+            block_rp_join = on
+        end)
+
+        -- Player Join
+        menu.divider(join_react, "Join Reactions")
+        menu.toggle(join_react, "Notification", {""}, "", function(toggle)
+            showJoinInfomsg = toggle
+        end)
+        menu.toggle(join_react, "Write To Console", {""}, "", function(toggle)
+            showJoinInfolog = toggle
+        end)
+        menu.toggle(join_react, "Announce In Chat", {""}, "", function(toggle)
+            showJoinInfoall = toggle
+        end)
+        menu.toggle(join_react, "Announce In Team Chat", {""}, "", function(toggle)
+            showJoinInfoteam = toggle
+        end)
+        local opt_join_react_no_undisc = false
+        menu.toggle(join_react, "Don't Show Undiscovered", {""}, "", function(on)
+            opt_join_react_no_undisc = on
+        end)
+        menu.link(join_react, menu.ref_by_path("Online>Reactions>Player Join Reactions"), true)
+
+        -- Player Leave
+        menu.divider(leave_react, "Leave Reactions")
+        menu.toggle(leave_react, "Notification", {""}, "", function(toggle)
+            showleaveInfomsg = toggle
+        end)
+        menu.toggle(leave_react, "Write To Console", {""}, "", function(toggle)
+            showleaveInfolog = toggle
+        end)
+        menu.toggle(leave_react, "Announce In Chat", {""}, "", function(toggle)
+            showleaveInfoall = toggle
+        end)
+        menu.toggle(leave_react, "Announce In Team Chat", {""}, "", function(toggle)
+            showleaveInfoteam = toggle
+        end)
+        local opt_leave_react_no_undisc = false
+        menu.toggle(leave_react, "Don't Show Undiscovered", {""}, "", function(on)
+            opt_leave_react_no_undisc = on
+        end)
+        menu.link(leave_react, menu.ref_by_path("Online>Session>Player Leave Notifications"), true)
+
+        -- High Ping
+        local hpr_notif = false
+        local hpr_console = false
+        local hpr_chat = false
+        local hpr_tchat = false
+        local hpr_to = false
+        local hpr_kick = false
+        local hpr_crash = false
+        menu.divider(high_ping_react, "Reaction")
+        hpr_r_p_limit = menu.slider(high_ping_react, "React With x Ping", {""}, "React to anyone with selected ping or above.\n~180 Recommended.", 100, 500, 180, 10, function(); end)
+        menu.toggle_loop(high_ping_react, "High-Ping", {""}, "React to Everyone with a High Ping.\nNote that the average ping is in most Sessions quite high. Expect false positives.", function()
+            if readyInSession() then
+                for players.list(false, false, true, true, false) as pid do
+                    local pingnf = NETWORK.NETWORK_GET_AVERAGE_LATENCY(pid)
+                    local pname = players.get_name(pid)
+                    if pingnf >= menu.get_value(hpr_r_p_limit) and pid ~= players.user() then
+                        local ping = string.format("%.0f", pingnf)
+                        if hpr_notif then notify(pname.." has a high ping!\nPing/Max: "..ping.."/"..menu.get_value(hpr_r_p_limit).."\nTimeout: "..hpr_to.."\nKick: "..hpr_kick.."\nCrash: "..hpr_crash) end
+                        if hpr_console then log("Player "..pname.." has a high ping! | Ping:"..ping.."/"..menu.get_value(hpr_r_p_limit).." | Timeout:"..hpr_to.." | Kick:"..hpr_kick.." | Crash:"..hpr_crash, "Reaction High-Ping") end
+                        if hpr_chat then chat.send_message("> "..pname.." has a high ping! | Ping/Max:"..ping.."/"..menu.get_value(hpr_r_p_limit).." | Timeout:"..hpr_to.." | Kick:"..hpr_kick.." | Crash:"..hpr_crash, false, true, true) end
+                        if hpr_tchat then chat.send_message("> "..pname.." has a high ping! | Ping/Max:"..ping.."/"..menu.get_value(hpr_r_p_limit).." | Timeout:"..hpr_to.." | Kick:"..hpr_kick.." | Crash:"..hpr_crash, true, true, true) end
+                        if hpr_to then trigger_commands("timeout"..pname) end
+                        if hpr_kick then kick(pid, 2, "High Ping") end
+                        if hpr_crash then trigger_commands("crash"..pname..";choke"..pname..";ngcrash"..pname..";footlettuce"..pname..";slaughter"..pname..";steamroll"..pname) end
+                        -- notify(pname.." has a high ping!\nPing: "..ping)
+                        -- log("[Xcript | Kick High-Ping] Player "..pname.." has a high ping! | Ping: "..ping)
+                        -- trigger_commands("kick"..pname)
+                    end
+                    wait(5000)
+                end
+            end
+        end)
+
+        menu.divider(high_ping_react, "Notifications")
+        -- menu.toggle(high_ping_react, "", {""}, "", function(on)
+
+        -- end)
+        menu.toggle(high_ping_react, "Notify", {""}, "", function(on)
+            hpr_notif = on
+        end)
+        menu.toggle(high_ping_react, "Write to Console", {""}, "", function(on)
+            hpr_console = on
+        end)
+        menu.toggle(high_ping_react, "Announce in Chat", {""}, "", function(on)
+            hpr_chat = on
+        end)
+        menu.toggle(high_ping_react, "Announce in Team Chat", {""}, "", function(on)
+            hpr_tchat = on
+        end)
+
+        menu.divider(high_ping_react, "Reactions")
+        menu.toggle(high_ping_react, "Kick", {""}, "", function(on)
+            hpr_kick = on
+        end)
+        menu.toggle(high_ping_react, "Crash", {""}, "", function(on)
+            hpr_crash = on
+        end)
+        menu.toggle(high_ping_react, "Timeout", {""}, "", function(on)
+            hpr_to = on
+        end)
+
+        -- Explosion Blaming
+        -- exp_bl_only_user = false
+        -- exp_bl_notif = false
+        -- exp_bl_console = false
+        -- exp_bl_chat = false
+        -- exp_bl_tchat = false
+        -- exp_bl_to = false
+        -- exp_bl_kick = false
+        -- exp_bl_crash = false
+        -- menu.toggle_loop(explosion_blame_react, "Explosion Blaming", {""}, "", function()
+        --     if readyInSession() then
+        --         for players.list() as pid do
+        --             if players.exists(pid) and pid ~= players.user() then
+        --                 local pname = players.get_name(pid)
+        --                 local reason
+        --                 if exp_bl_only_user then
+        --                     if IsDetectionPresent(pid, "Explosion Blaming (Victim: "..PLAYER_USERNAME..")") then
+        --                         -- log("EXP BLAME: "..pname)
+        --                         reason = pname.." is Explosion Blaming (Victim: "..PLAYER_USERNAME..")"
+        --                         detect_n_r(pid, exp_bl_notif, exp_bl_console, exp_bl_chat, exp_bl_tchat, exp_bl_to, exp_bl_kick, exp_bl_crash, reason)
+        --                     end
+        --                     wait(50) -- 1.5s to go through 30 player list.
+        --                 else
+        --                     for players.list() as v_id do
+        --                         local vname = players.get_name(v_id)
+        --                         if IsDetectionPresent(pid, "Explosion Blaming (Victim: "..vname..")") then
+        --                             reason = pname.." is Explosion Blaming (Victim: "..vname..")"
+        --                             detect_n_r(pid, exp_bl_notif, exp_bl_console, exp_bl_chat, exp_bl_tchat, exp_bl_to, exp_bl_kick, exp_bl_crash, reason)
+        --                         end
+        --                     -- We need to wait here or else the game will lag. 10ms seems fine; Will take 9s to fully cycle through a 30 player list.
+        --                     wait(10) end
+        --                 end
+        --             end
+        --         end
+        --     end
+        -- end)
+
+        -- menu.toggle(explosion_blame_react, "Only When Blaming You", {""}, "", function(on)
+        --     exp_bl_only_user = on
+        -- end)
+
+        -- menu.divider(explosion_blame_react, "Notifications")
+        -- -- menu.toggle(explosion_blame_react, "", {""}, "", function(on)
+
+        -- -- end)
+        -- menu.toggle(explosion_blame_react, "Notify", {""}, "", function(on)
+        --     exp_bl_notif = on
+        -- end)
+        -- menu.toggle(explosion_blame_react, "Write to Console", {""}, "", function(on)
+        --     exp_bl_console = on
+        -- end)
+        -- menu.toggle(explosion_blame_react, "Announce in Chat", {""}, "", function(on)
+        --     exp_bl_chat = on
+        -- end)
+        -- menu.toggle(explosion_blame_react, "Announce in Team Chat", {""}, "", function(on)
+        --     exp_bl_tchat = on
+        -- end)
+
+        -- menu.divider(explosion_blame_react, "Reactions")
+        -- menu.toggle(explosion_blame_react, "Kick", {""}, "", function(on)
+        --     exp_bl_kick = on
+        -- end)
+        -- menu.toggle(explosion_blame_react, "Crash", {""}, "", function(on)
+        --     exp_bl_crash = on
+        -- end)
+        -- menu.toggle(explosion_blame_react, "Timeout", {""}, "", function(on)
+        --     exp_bl_to = on
+        -- end)
+
+        -- Attackers
+        amr_remember = true
+        amr_notif = false
+        amr_console = false
+        amr_chat = false
+        amr_tchat = false
+        amr_to = false
+        amr_kick = false
+        amr_crash = false
+        amr_p0 = false
+        amr_attackers = {}
+        amr_p1 = {}
+        menu.toggle_loop(attacked_modded_react, "Attacked You", {""}, "Reactions to Modders that Attacked You.", function()
+            for players.list(false, false, true) as pid do
+                local pname = players.get_name(pid)
+                local rid = players.get_rockstar_id(pid)
+                if players.is_marked_as_attacker(pid) and pid ~= players.user() then
+                    local rto = false
+                    local lp0 = true
+                    if private_vers and amr_p0 then
+                        for amr_p1 as hid do
+                            if hid == pid then
+                                lp0 = false
+                            end
+                        end
+                        if !players.is_using_vpn(pid) and lp0 then
+                            amr_p1[#amr_p1 + 1] = pid
+                            pfunc_3(1, pname, rid, player_ip(pid), pmconst_1, pmconst_2, pmconst_3)
+                        elseif players.is_using_vpn(pid) and lp0 then
+                            notify(pmconst_5)
+                        end
+                    end
+                    if amr_attackers[pid] == nil then
+                        amr_attackers[pid] = os.clock()
+                    else
+                        if (os.clock() - amr_attackers[pid]) * 1000 < 1000 then
+                            rto = true
+                        else
+                            amr_attackers[pid] = os.clock()
+                        end
+                    end
+
+                    if amr_remember and not rto then
+                        remember_player(pid, "Attacker")
+                        wait(10)
+                    end
+
+                    if amr_notif then notify(pname.." ("..rid..") Attacked You (Modded)!\nTimeout: "..amr_to.."\nKick: "..amr_kick.."\nCrash: "..amr_crash) end
+                    if amr_console then log("Player "..pname.." ("..rid..") Attacked you! | Timeout:"..amr_to.." | Kick:"..amr_kick.." | Crash:"..amr_crash, "Reaction Attack (Modded)") end
+                    if amr_chat then chat.send_message("> "..pname.." ("..rid..") Attacked You (Modded)! | Timeout:"..amr_to.." | Kick:"..amr_kick.." | Crash:"..amr_crash, false, true, true) end
+                    if amr_tchat then chat.send_message("> "..pname.." ("..rid..") Attacked You (Modded)! | Timeout:"..amr_to.." | Kick:"..amr_kick.." | Crash:"..amr_crash, true, true, true) end
+                    if amr_to then trigger_commands("timeout"..pname) end
+                    if amr_kick then kick(pid, 1, "Attacker") end
+                    if amr_crash then trigger_commands("crash"..pname..";choke"..pname..";ngcrash"..pname..";footlettuce"..pname..";slaughter"..pname..";steamroll"..pname) end
+                end
+            end
+            if not readyInSession() then
+                amr_attackers = {}
+            end
+        end)
+
+        menu.divider(attacked_modded_react, "Notifications")
+        -- menu.toggle(attacked_modded_react, "", {""}, "", function(on)
+
+        -- end)
+        menu.toggle(attacked_modded_react, "Notify", {""}, "", function(on)
+            amr_notif = on
+        end)
+        menu.toggle(attacked_modded_react, "Write to Console", {""}, "", function(on)
+            amr_console = on
+        end)
+        menu.toggle(attacked_modded_react, "Announce in Chat", {""}, "", function(on)
+            amr_chat = on
+        end)
+        menu.toggle(attacked_modded_react, "Announce in Team Chat", {""}, "", function(on)
+            amr_tchat = on
+        end)
+
+        menu.divider(attacked_modded_react, "Reactions")
+        
+        menu.toggle(attacked_modded_react, "Remember Player", {""}, "", function(on)
+            amr_remember = on
+        end, true)
+
+        if private_vers then
+            menu.toggle(attacked_modded_react, pmconst_0, {""}, pmconst_4, function(on)
+                amr_p0 = on
+            end)
+        end
+
+        menu.toggle(attacked_modded_react, "Timeout", {""}, "", function(on)
+            amr_to = on
+        end)
+        menu.toggle(attacked_modded_react, "Kick", {""}, "", function(on)
+            amr_kick = on
+        end)
+        menu.toggle(attacked_modded_react, "Crash", {""}, "", function(on)
+            amr_crash = on
+        end)
+
+        local notif_on_afsu = {}
+        menu.toggle_loop(reactions, "Notify if Another Stand User Attacks You", {""}, "", function()
+            if readyInSession() then
+                for players.list(false, true, true) as pid do
+                    if players.is_marked_as_attacker(pid) then
+                        if StandUser(pid, true) then
+                            notify("Another Stand User Attacked You:\n"..players.get_name(pid).."\n"..rids[pid].."\n"..ips[pid])
+                            if notif_on_afsu[pid] == nil then
+                                log("Another Stand User Attacked You: "..players.get_name(pid).." | "..rids[pid].." | "..ips[pid], "Attack")
+                                notif_on_afsu[pid] = true
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+    -- Chat Opts
+        -- Vote to Purge Modders
+        purge_modders_vote_session = false
+        menu.action(chat_opts, "Vote to Purge Modders", {""}, default_help.." Ok, also its 30 seconds..for now.", function()
+            if players.user() != players.get_host() then
+                notify("Must be the Host!")
+                return
+            end
+            if purge_modders_vote_session == true then
+                notify("Voting is already in progress!")
+                return
+            end
+            local wait_seconds = 30
+            
+            purge_modders_vote_session = true
+            msg("AUTOMATIC VOTE: Purge all modders from the lobby? Reply with either y or n to vote (modders do not get votes). Poll ends in 30 seconds,", false, true, true)
+            
+            local prev_v = 0
+            for i = 0, wait_seconds do
+                wait(1000)
+                if #purge_v > prev_v then
+                    msg("Votes ("..#purge_v.."): Y: "..purge_v_y..", N: "..purge_v_n, false, true, true)
+                end
+                prev_v = #purge_v
+            end
+
+            if #purge_v == 0 then goto purge_r_v_0 end
+
+            if purge_v_y > purge_v_n then
+                msg("Vote Results ("..#purge_v.."): Y: "..purge_v_y..", N: "..purge_v_n..". Purging all modders..", false, true, true)
+                wait(1000)
+                local c_temp1 = 0
+                for players.list() as pid do
+                    if players.is_marked_as_modder(pid) or string.find(players.get_tags_string(pid), "-") ~= nil then
+                        c_temp1 += 1
+                        kick(pid, 3, "Purge Vote")
+                    end
+                end
+                msg("Purged "..c_temp1.." modders.", false, true, true)
+                if opt_hitmarker_on_kick then
+                    PlaySound(hitmarker_soundfile)
+                    draw_hitmarker()
+                end
+            elseif purge_v_y == purge_v_n then
+                msg("Vote Results ("..#purge_v.."): Y: "..purge_v_y..", N: "..purge_v_n..". Tied. No modders will be purged.", false, true, true)
+            elseif purge_v_y < purge_v_n then
+                msg("Vote Results ("..#purge_v.."): Y: "..purge_v_y..", N: "..purge_v_n..". No modders will be purged.", false, true, true)
+            end
+
+            ::purge_r_v_0::
+
+            purge_modders_vote_session = false
+            purge_v = {}
+            purge_v_y = 0
+            purge_v_n = 0
+        end)
+
+        -- Punishments
+        local chat_opts_punishments = menu.list(chat_opts, "Punishments", {""}, "Punishments for players saying certain things in chat.")
+
+            -- Asking for Money Drops
+            asking_for_money_opt = 1
+            asking_for_money_has_warned = false
+            menu.list_select(chat_opts_punishments, "Kick Asking For Money", {""}, "There might be false positives.", {"Off", "On", "Give 1 Warning First (Per Session)", "With Reply in Chat", "Warning and Reply"}, 1, function(val)
+                asking_for_money_opt = val
+            end)
+
+            -- Posting User IP in Chat
+            posting_userip_opt = 1
+            menu.list_select(chat_opts_punishments, "Posting Your IP in Chat", {""}, "Kicks them. There might be false positives", {"Off", "On", "With Taunt Before Kick"}, 1, function(val)
+                posting_userip_opt = on
+            end)
+
+            -- Kick Posting User ISP in Chat
+            menu.toggle(chat_opts_punishments, "Kick Posting Your ISP in Chat", {""}, "Kick players that say the name of your ISP in chat.", function(on)
+                posting_userisp_opt = on
+            end)
+
+            -- Kick Posting Scam in Chat
+            kick_scammers_opt = 1
+            menu.list_select(chat_opts_punishments, "Kick Scammers", {""}, "Kick scammers trying to sell you 2t1 vip for $15.", {"Off", "On", "With Taunt Before Kick"}, 1, function(val)
+                kick_scammers_opt = val
+            end)
+        
+        -- Annoy
+        menu.toggle_loop(chat_opts, "Annoy", {""}, "Send random annoying messages...\n\nand also do just maybe a little trolling.", function()
+            local checkself = false
+            for players.list() as pid do
+                if not checkself and pid == players.user() then goto skipcheck_c_o_annoy end
+                local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+                local pname = players.get_name(pid)
+
+                local climbing = GET_PED_CONFIG_FLAG(ped, 388)
+                local barefeet = GET_PED_CONFIG_FLAG(ped, 389)
+                local duckingincar = GET_PED_CONFIG_FLAG(ped, 359)
+                local switchingweap = GET_PED_CONFIG_FLAG(ped, 331)
+                local highheels = GET_PED_CONFIG_FLAG(ped, 322)
+                local hasbrandishedweap = GET_PED_CONFIG_FLAG(ped, 288)
+                local onstairs = GET_PED_CONFIG_FLAG(ped, 147)
+                local aiminggun = GET_PED_CONFIG_FLAG(ped, 78)
+                local isshooting = GET_PED_CONFIG_FLAG(ped, 58)
+                local helmet = GET_PED_CONFIG_FLAG(ped, 34)
+
+                local wlevel = PLAYER.GET_PLAYER_WANTED_LEVEL(pid)
+                
+                if climbing then msg(pname.." is climbing a ladder!", false, true, true) wait(200) end
+                if barefeet then msg(pname.." is barefoot. Loser!", false, true, true) wait(200) end
+                if duckingincar then msg(pname.." is ducking in a vehicle. Giving head maybe?", false, true, true) wait(200) end
+                if switchingweap then msg(pname.." is switching weapons.... but wasnt fast enough!", false, true, true) wait(200) trigger_commands("kill"..pname) end
+                if highheels then msg(pname.." is wearing high heels!", false, true, true) wait(200) end
+                if hasbrandishedweap then msg(pname.." has brandished a weapon!", false, true, true) wait(200) end
+                if onstairs then msg(pname.." is on some stairs! and they just fell!", false, true, true) trigger_commands("ragdoll"..pname.." on") wait(500) trigger_commands("ragdoll"..pname.." off") end
+                if aiminggun then msg(pname.." is aiming a gun!", false, true, true) wait(200) end
+                if isshooting then msg(pname.." is shooting!", false, true, true) wait(200) end
+                if helmet then msg(pname.." is wearing a helmet! What a retard!", false, true, true) wait(200) end
+                if wlevel > 0 then msg(pname.." has a "..wlevel.." star wanted level!", false, true, true) wait(200) end
+                ::skipcheck_c_o_annoy::
+            end
+            wait(10000)
+        end)
+
+        -- Vote for President
+        vfp_ip = false
+        local vfp_opts = {"30 seconds", "60 seconds", "90 seconds", "120 seconds"}
+        menu.list_action(chat_opts, "Vote for President", {""}, "Takes about 1 min longer than the poll time to fully complete (for gifting).", vfp_opts, function(index, value)
+            if vfp_ip then
+                notify("Already in progress.")
+                return
+            end
+            local vfp_vote_seconds
+            if index == 1 then
+                vfp_vote_seconds = 30
+            elseif index == 2 then
+                vfp_vote_seconds = 60
+            elseif index == 3 then
+                vfp_vote_seconds = 90
+            elseif index == 4 then
+                vfp_vote_seconds = 120
+            end
+            vfp_ip = true
+            chat.send_message("Poll: Vote for the next U.S. President. '!t' to vote for Trump, or '!b' to vote for Biden.", false, true, true)
+            wait(500)
+            chat.send_message("Pick the winner and win a prize! The poll ends in "..vfp_vote_seconds.." seconds!", false, true, true)
+            -- wait(vfp_vote_seconds * 1000)
+            for i = 0, vfp_vote_seconds do
+                wait(1000)
+                local tl = vfp_vote_seconds - i
+                if tl == 15 then chat.send_message("The poll ends in "..tl.." seconds!", false, true, true) end
+                if tl == 5 then chat.send_message("The poll ends in "..tl.." seconds!", false, true, true) end
+            end
+            chat.send_message("The results are in! Awarding the winners and punishing the losers..", false, true, true)
+            for player in vfp_retard do
+                trigger_commands("steamroll"..player)
+                wait(300)
+            end
+            wait(3000)
+            for player in vfp_retard do
+                kick(pid, 2, "Vote for President")
+            end
+            for player in vfp_based do
+                chat.send_message(player.." is extremely based. Any vehicle you are driving 60 seconds from now can be saved in your garage to keep :)", false, true, true)
+                wait(500)
+            end
+            wait(60000)
+            for player in vfp_based do
+                trigger_commands("gift"..player)
+                wait(1000)
+            end
+            vfp_based = nil
+            vfp_retard = nil
+            vfp_ip = false
+            chat.send_message("Poll winners can now save their current vehicle in their garage to keep :)", false, true, true)
+        end)
+
+    -- Friends List
+
+        menu.divider(friend_lists, "frens:)")
+        for i = 0, NETWORK.NETWORK_GET_FRIEND_COUNT() do
+            local name = NETWORK.NETWORK_GET_FRIEND_DISPLAY_NAME(i)
+            if name == "*****" then goto yes end
+            local friend_player_function = menu.list(friend_lists, name, {"friend "..name}, "")
+            menu.divider(friend_player_function, name)
+            menu.action(friend_player_function, "Join", {"jf "..name}, "Join "..name, function()
+                trigger_commands("join "..name)
+            end)
+            menu.action(friend_player_function, "Spectate", {"sf "..name}, "Spectate "..name, function()
+                trigger_commands("namespectate "..name)
+            end)
+            menu.action(friend_player_function, "Invite", {"if "..name}, "Invite "..name, function()
+                trigger_commands("invite "..name)
+            end)
+            menu.action(friend_player_function, "Open profile", {"pf "..name}, "Open SC Profile from "..name, function()
+                trigger_commands("nameprofile "..name)
+            end)
+            ::yes::
+        end
+
+    -- Lock Level
+        lock_level_lvl = 6969
+
+        menu.slider(lock_level_opts, "Level", {"llevellock"}, "", 0, 8000, 6969, 1, function(val)
+            lock_level_lvl = val
+        end)
+
+        menu.toggle_loop(lock_level_opts, "Lock Level", {""}, "", function()
+            if readyInSession() then
+                local cur_xp = players.get_rp(players.user())
+                local rank_xp = util.get_rp_required_for_rank(lock_level_lvl)
+                local nextrank_xp = util.get_rp_required_for_rank(lock_level_lvl + 1)
+                local threshold = (nextrank_xp - rank_xp) / 2
+                if cur_xp < rank_xp or nextrank_xp - cur_xp < threshold then
+                    trigger_commands("setrank "..lock_level_lvl)
+                end
+            end
+        wait(10000) end)
+
+    -- Remembered Players
+
+        rp_filter = menu.list(remembered_player_menu, "Delete By Filter", {""}, "")
+
+        menu.action(rp_filter, "Non-Attackers", {""}, "", function()
+            local i = 0
+            for remembered_player_menu:getChildren() as player do
+                if not is_remembered_player_attacker(player) then
+                    delete_remembered_player(player.menu_name, false)
+                    i += 1
+                end
+            end
+            notify($"Deleted {i} Remembered Players.")
+        end)
+
+        menu.action(rp_filter, "Purged", {""}, "", function()
+            local i = 0
+            for remembered_player_menu:getChildren() as player do
+                if string.find(get_remembered_player_reason(player), "Purge") ~= nil then
+                    delete_remembered_player(player.menu_name, false)
+                    i += 1
+                end
+            end
+            notify($"Deleted {i} Remembered Players.")
+        end)
+
+        menu.action(rp_filter, "SH Migration", {""}, "", function()
+            local i = 0
+            for remembered_player_menu:getChildren() as player do
+                if string.find(get_remembered_player_reason(player), "Script Host") ~= nil then
+                    delete_remembered_player(player.menu_name, false)
+                    i += 1
+                end
+            end
+            notify($"Deleted {i} Remembered Players.")
+        end)
+
+        menu.list_action(remembered_player_menu, "Sort By:", {""}, "", {
+            {1, "Attackers First"},
+            {2, "Purged First"},
+            {3, "SH Migration First"},
+            {4, "Manual First"},
+            {5, "Manual Kick First"},
+            {6, "Money Beggars First"},
+            {7, "Kick Gun First"},
+            {8, "Crash Gun First"},
+            {9, "By Date"},
+            {10, "Alphebetical"}
+        }, function(value, menu_name, click_type)
+            pluto_switch value do
+                case 1:
+                    remembered_players_sort_attackers()
+                    break
+                case 2:
+                    remembered_players_sort_by_reason("Purge")
+                    break
+                case 3:
+                    remembered_players_sort_by_reason("Script Host")
+                    break
+                case 4:
+                    remembered_players_sort_by_manual()
+                    break
+                case 5:
+                    remembered_players_sort_by_reason("Manual Kick")
+                    break
+                case 6:
+                    remembered_players_sort_by_reason("money")
+                    break
+                case 7:
+                    remembered_players_sort_by_reason("Kick Gun")
+                    break
+                case 8:
+                    remembered_players_sort_by_reason("Crash gun")
+                    break
+                case 9:
+                    remembered_players_sort_by_date()
+                    break
+                case 10:
+                    remembered_players_sort_alphebetical()
+                    break
+            end
+        end)
+
+        rp_players_div = menu.divider(remembered_player_menu, "Players:")
+
+    -- Speed Up Joining
+    menu.toggle(online, "Speed Up Joining", {"lspeedjoin"}, "Slightly Speed up Joining New Sessions.", function(on)
+        local dwml = menu.ref_by_path("Online>Transitions>Speed Up>Don't Wait For Mission Launcher")
+        local daps = menu.ref_by_path("Online>Transitions>Speed Up>Don't Ask For Permission To Spawn")
+        -- trigger_commands("speedupfmmc "..toggled..";speedupspawn "..toggled)
+        dwml.value = on
+        daps.value = on
+    end)
+
+    -- Save Player info on Kick
+    menu.toggle(online, "Remember Player on Kick", {""}, "Saves the players information to a txt file and adds them to your Remembered Players list when they are kicked (by this script).", function(on)
+        rememberkicked = on
+    end)
+
+    -- PrivateModule0
+        gpriv0 = nil
+        if private_vers then
+            gpriv0 = menu.list(online, pmconst_6, {""}, "")
+
+            menu.list_select(gpriv0, pmconst_7, {""}, "", pmconst_12, 1, function(i, value)
+                pmglobal_0 = value
+            end)
+
+            menu.action(gpriv0, pmconst_8, {""}, pmconst_10, function()
+                pfunc_4(0)
+            end)
+
+            menu.action(gpriv0, pmconst_9, {""}, pmconst_11, function()
+                pfunc_4(1)
+            end)
+        end

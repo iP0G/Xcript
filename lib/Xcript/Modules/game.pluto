@@ -1,0 +1,103 @@
+
+-- Root Game
+local game_root = menu.list(menu.my_root(), "Game", {"lgame"}, "World Options")
+
+-- Sub Tabs
+-----------------------
+local game_audio_opts = menu.list(game_root, "Audio", {""}, "These are LOCAL options.")
+local game_notifs_opts = menu.list(game_root, "Notifications", {""}, "Options for Notifications in the game.")
+local game_ui_opts = menu.list(game_root, "HUD / UI", {""}, "Options for the HUD / UI in the game.")
+
+---------------------
+-- Main
+---------------------
+-- Game 
+
+-- Audio
+menu.toggle_loop(game_audio_opts, "Disable Scripted Music", {""}, "Disables music from missions, etc.", function()
+    if AUDIO.AUDIO_IS_MUSIC_PLAYING() and !NETWORK.NETWORK_IS_ACTIVITY_SESSION() then
+        AUDIO.TRIGGER_MUSIC_EVENT("GLOBAL_KILL_MUSIC")
+    end
+end)
+
+menu.toggle_loop(game_audio_opts, "Disable Ambient Sounds", {""}, "", function()
+    if util.is_session_transition_active() then AUDIO.STOP_AUDIO_SCENE("CHARACTER_CHANGE_IN_SKY_SCENE") return end
+    if !AUDIO.IS_AUDIO_SCENE_ACTIVE("CHARACTER_CHANGE_IN_SKY_SCENE") then
+        AUDIO.START_AUDIO_SCENE("CHARACTER_CHANGE_IN_SKY_SCENE")
+    end
+end, function()
+    AUDIO.STOP_AUDIO_SCENE("CHARACTER_CHANGE_IN_SKY_SCENE")
+end)
+
+menu.toggle(game_audio_opts, "Disable Distant Sirens", {""}, "", function(on)
+    AUDIO.DISTANT_COP_CAR_SIRENS(!on)
+end)
+
+menu.toggle_loop(game_audio_opts, "Disable Vehicle Audio", {""}, "", function()
+    if !readyInSession() then AUDIO.STOP_AUDIO_SCENE("MP_CAR_MOD_SHOP") return end
+    if !AUDIO.IS_AUDIO_SCENE_ACTIVE("MP_CAR_MOD_SHOP") then
+        AUDIO.START_AUDIO_SCENE("MP_CAR_MOD_SHOP")
+    end
+end, function()
+    AUDIO.STOP_AUDIO_SCENE("MP_CAR_MOD_SHOP")
+end)
+
+menu.toggle_loop(game_audio_opts, "Disable Radio Audio", {""}, "", function()
+    if !AUDIO.IS_AUDIO_SCENE_ACTIVE("CAR_MOD_RADIO_MUTE_SCENE") then
+        AUDIO.START_AUDIO_SCENE("CAR_MOD_RADIO_MUTE_SCENE")
+    end
+end, function()
+    AUDIO.STOP_AUDIO_SCENE("CAR_MOD_RADIO_MUTE_SCENE")
+end)
+
+menu.toggle_loop(game_audio_opts, "Radio Off", {""}, "Every time you enter a car.", function()
+    local vehicle = player_cur_car
+    if AUDIO.GET_PLAYER_RADIO_STATION_NAME() != "OFF" and VEHICLE.GET_IS_VEHICLE_ENGINE_RUNNING(vehicle) then
+        wait(150)
+        AUDIO.SET_RADIO_TO_STATION_NAME("OFF")
+        repeat
+            wait()
+        until !PED.IS_PED_IN_ANY_VEHICLE(players.user_ped()) or player_cur_car != vehicle
+    end
+end)
+
+-- Notifications
+menu.colour(game_notifs_opts, "Background Color", {""}, "", 0, 0, 0, 1.0, true, function(color)
+    local index = util.get_closest_hud_colour(math.floor(color.r * 255), math.floor(color.g * 255), math.floor(color.b * 255), math.floor(color.a * 255))
+    HUD.THEFEED_SET_BACKGROUND_COLOR_FOR_NEXT_POST(index)
+    -- log("Set HUD Color to: "..index, "dd")
+end)
+
+menu.colour(game_notifs_opts, "Text Color", {""}, "", 1.0, 1.0, 1.0, 1.0, true, function(color)
+    local index = util.get_closest_hud_colour(math.floor(color.r * 255), math.floor(color.g * 255), math.floor(color.b * 255), math.floor(color.a * 255))
+    HUD.OVERRIDE_MP_TEXT_CHAT_COLOR(0, index)
+end)
+
+-- Game UI
+menu.toggle_loop(game_ui_opts, "*Hide HUD", {""}, "*WIP - Does not work currently.", function()
+    GRAPHICS.FORCE_RENDER_IN_GAME_UI(false)
+    HUD.HIDE_HUD_COMPONENT_THIS_FRAME(0)
+end, function() GRAPHICS.FORCE_RENDER_IN_GAME_UI(true) end)
+
+for key, name in ipairs(game_ui_components) do
+    menu.toggle_loop(game_ui_opts, name, {""}, "Disables the "..name.." HUD Component", function()
+        HUD.HIDE_HUD_COMPONENT_THIS_FRAME(key)
+    end)
+end
+
+menu.toggle_loop(game_ui_opts, "Scripted Hud Components", {""}, "Disables the Scripted Hud Components", function()
+    HUD.HIDE_HUD_COMPONENT_THIS_FRAME(141)
+end)
+
+
+-- Quit To Desktop
+quit_to_desktop_ref = menu.action(game_root, "Quit to Desktop", {"lqtd"}, "YEET.", function()
+    MISC.QUIT_GAME()
+end)
+
+-- IS_MP_GAMER_TAG_ACTIVE(int gamerTagId) (RID?)
+-- SET_MP_GAMER_TAG_VISIBILITY
+-- SET_MP_GAMER_TAG_NAME
+-- SET_MP_GAMER_TAG_BIG_TEXT
+-- SET_RIOT_MODE_ENABLED
+-- FORCE_GAME_STATE_PLAYING

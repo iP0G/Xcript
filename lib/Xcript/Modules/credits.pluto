@@ -1,0 +1,22 @@
+
+-- Root Credits
+creditslist = menu.list(menu.my_root(), "Initializing..", {""}, "Some cool people.")
+
+---------------------
+-- Main
+---------------------
+-- Credits
+hiddenopts_count = 0
+clist1 = menu.action(creditslist, "Me - L_una-chan", {""}, ":)", function()
+    util.copy_to_clipboard("Me - L_una-chan", true)
+    hiddenopts_count += 1
+
+    if hiddenopts_count == 10 and !dev_vers then
+        create_hiddenopts_menu()
+    end
+end)
+
+clist2 = menu.readonly(creditslist, "You! - "..PLAYER_USERNAME)
+menu.set_help_text(clist2, "Thank you for using my Script!")
+
+if dev_vers then create_hiddenopts_menu() end

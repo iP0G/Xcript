@@ -1,0 +1,1801 @@
+json = require("json")
+notificationBits = 0
+nearbyNotificationBits = 0
+blips = {}
+
+HudColour =
+{
+	pureWhite = 0,
+	white = 1,
+	black = 2,
+	grey = 3,
+	greyLight = 4,
+	greyDrak = 5,
+	red = 6,
+	redLight = 7,
+	redDark = 8,
+	blue = 9,
+	blueLight = 10,
+	blueDark = 11,
+	yellow = 12,
+	yellowLight = 13,
+	yellowDark = 14,
+	orange = 15,
+	orangeLight = 16,
+	orangeDark = 17,
+	green = 18,
+	greenLight = 19,
+	greenDark = 20,
+	purple = 21,
+	purpleLight = 22,
+	purpleDark = 23,
+	radarHealth = 25,
+	radarArmour = 26,
+	friendly = 118,
+}
+
+function log(txt, type)
+    local typetxt = "[Xcript] "
+    if type ~= nil then
+        if type == "d" then type = "Debug" end
+        if type == "dd" then type = "-- Debug " end
+        typetxt = "[Xcript | "..type.."] "
+    end
+    util.log(typetxt..txt)
+end
+
+function encode(text)
+    return string.gsub(text, "%s", "+")
+end
+
+function is_item_in_list(item, list)
+    for list as i do
+        if i == item then return true end
+    end
+    return false
+end
+
+function readyInSession()
+    if util.is_session_started() and not util.is_session_transition_active() then
+        return true
+    end
+    return false
+end
+
+function game_notification(format, colour, ...)
+	local msg = string.format(format, ...)
+    --local txdDict = "DIA_ZOMBIE1",
+	--local txdName = "DIA_ZOMBIE1",
+	--local title = "Xcript",
+	--local subtitle = "~c~" .. util.get_label_text("PM_PANE_FEE") .. "~s~",
+
+	HUD.THEFEED_SET_BACKGROUND_COLOR_FOR_NEXT_POST(colour or HudColour.black)
+	util.BEGIN_TEXT_COMMAND_THEFEED_POST(msg)
+	--HUD.END_TEXT_COMMAND_THEFEED_POST_MESSAGETEXT(txdDict, txdName, true, 4, title, subtitle)
+	HUD.END_TEXT_COMMAND_THEFEED_POST_TICKER(false, false)
+end
+
+function IA_MENU_OPEN_OR_CLOSE()
+    PAD.SET_CONTROL_VALUE_NEXT_FRAME(2, 244, 1.0)
+    wait(150)
+end
+function IA_MENU_UP(Num)
+    for i = 1, Num do
+        PAD.SET_CONTROL_VALUE_NEXT_FRAME(2, 172, 1.0)
+        wait(100)
+    end
+end
+function IA_MENU_DOWN(Num)
+    for i = 1, Num do
+        PAD.SET_CONTROL_VALUE_NEXT_FRAME(2, 173, 1.0)
+        wait(100)
+    end
+end
+function IA_MENU_LEFT(Num)
+    for i = 1, Num do
+        PAD.SET_CONTROL_VALUE_NEXT_FRAME(2, 174, 1.0)
+        wait(100)
+    end
+end
+function IA_MENU_ENTER(Num)
+    PAD.SET_CONTROL_VALUE_NEXT_FRAME(2, 176, 1.0)
+    wait(100)
+end
+
+function play_anim(dict, name, duration)
+    local ped = PLAYER.PLAYER_PED_ID()
+    while not STREAMING.HAS_ANIM_DICT_LOADED(dict) do
+        STREAMING.REQUEST_ANIM_DICT(dict)
+        wait()
+    end
+    TASK.TASK_PLAY_ANIM(ped, dict, name, 1.0, 1.0, duration, 3, 0.5, false, false, false)
+end
+
+function restart_fm()
+    local host = players.get_name(players.get_host())
+    local script_host = players.get_name(players.get_script_host())
+    trigger_commands("restartfm")
+    notify("Restarting Session Scripts...")
+    log("Restating Session Scripts. Current Host and Script Host: "..host.." and "..script_host..".", "Session Restart")
+end
+
+function closestveh(myPos)
+    local closestDist = 999999999999
+    local closestVeh = nil
+    for entities.get_all_vehicles_as_pointers() as veh do
+        local vehpos = entities.get_position(veh)
+        local dist = myPos:distance(vehpos)
+        if (dist < closestDist) then
+            closestDist = dist
+            closestVeh = veh
+        end
+    end
+    if closestVeh ~= nil then
+        return entities.pointer_to_handle(closestVeh)
+    end
+end
+
+function request_control(vehicle, migrate)
+    local ctr = 0
+    while not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(vehicle) do
+        if ctr >= 250 then
+            -- notify("Failed to get control of players vehicle. :/")
+            ctr = 0
+            return false
+        end
+        NETWORK.NETWORK_REQUEST_CONTROL_OF_ENTITY(vehicle)
+        util.yield()
+        ctr += 1
+    end
+    if migrate then
+        entities.set_can_migrate(vehicle, true)
+    else
+        entities.set_can_migrate(vehicle, false)
+    end
+    return true
+end
+
+function request_control_of_entity(ent)
+    if not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(ent) and util.is_session_started() then
+        local netid = NETWORK.NETWORK_GET_NETWORK_ID_FROM_ENTITY(ent)
+        NETWORK.SET_NETWORK_ID_CAN_MIGRATE(netid, true)
+        local st_time = os.time()
+        while not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(ent) do
+            -- intentionally silently fail, otherwise we are gonna spam the everloving shit out of the user
+            if os.time() - st_time >= 5 then
+                log("Failed to request entity control in 5 seconds (entity " .. ent .. ")")
+                break
+            end
+            NETWORK.NETWORK_REQUEST_CONTROL_OF_ENTITY(ent)
+            util.yield()
+        end
+    end
+end
+
+function request_control_of_entity_once(ent)
+    if not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(ent) and util.is_session_started() then
+        local netid = NETWORK.NETWORK_GET_NETWORK_ID_FROM_ENTITY(ent)
+        NETWORK.SET_NETWORK_ID_CAN_MIGRATE(netid, true)
+        NETWORK.NETWORK_REQUEST_CONTROL_OF_ENTITY(ent)
+    end
+end
+
+function request_model_load(hash)
+    util.request_model(hash, 2000)
+end
+
+function RequestAnimation(hash)
+    STREAMING.REQUEST_ANIM_DICT(hash)
+    while not STREAMING.HAS_ANIM_DICT_LOADED(hash) do
+        util.yield()
+    end
+end
+
+function do_ped_suicide(ped)
+    request_control_of_entity_once(ped)
+    TASK.CLEAR_PED_TASKS_IMMEDIATELY(ped)
+    PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(ped, true)
+    WEAPON.GIVE_WEAPON_TO_PED(ped, util.joaat("weapon_pistol"), 1, false, true)
+    WEAPON.SET_CURRENT_PED_WEAPON(ped, util.joaat("weapon_pistol"), true)
+    RequestAnimation("mp_suicide")
+    util.yield(1000)
+    local start_time = os.time()
+    -- either wait till the ped is standing still, or 3 seconds, whichever is first
+    while ENTITY.GET_ENTITY_SPEED(ped) > 1 and os.time() - start_time < 3 do 
+        util.yield()
+    end
+    TASK.TASK_PLAY_ANIM(ped, "mp_suicide", "pistol", 8.0, 8.0, -1, 2, 0.0, false, false, false)
+    util.yield(800)
+    ENTITY.SET_ENTITY_HEALTH(ped, 0.0)
+    util.yield(10000)
+    entities.delete_by_handle(ped)
+end
+
+-- param entity Entity
+-- return boolean
+-- function request_control_once(entity)
+-- 	if not NETWORK.NETWORK_IS_IN_SESSION() then
+-- 		return true
+-- 	end
+-- 	local netId = NETWORK.NETWORK_GET_NETWORK_ID_FROM_ENTITY(entity)
+-- 	NETWORK.SET_NETWORK_ID_CAN_MIGRATE(netId, true)
+-- 	return NETWORK.NETWORK_REQUEST_CONTROL_OF_ENTITY(entity)
+-- end
+
+---@param player Player
+---@param isPlaying boolean
+---@param inTransition boolean
+---@return boolean
+function is_player_active(player, isPlaying, inTransition)
+	if player == -1 or
+	not NETWORK.NETWORK_IS_PLAYER_ACTIVE(player) then
+		return false
+	end
+	if isPlaying and not PLAYER.IS_PLAYER_PLAYING(player) then
+		return false
+	end
+	if inTransition and
+	read_global.int(2657704 + (player * 463 + 1)) ~= 4 then -- func_21 build 2944
+		return false
+	end
+	return true
+end
+
+function RequestModel(hash, timeout)
+    timeout = timeout or 3
+    util.request_model(hash)
+    local end_time = os.time() + timeout
+    repeat
+        wait()
+    until STREAMING.HAS_MODEL_LOADED(hash) or os.time() >= end_time
+    return STREAMING.HAS_MODEL_LOADED(hash)
+end
+
+function spawn_ped(model_name, pos, godmode)
+    local hash = util.joaat(model_name)
+    if STREAMING.IS_MODEL_A_PED(hash) then
+        util.request_model(hash)
+        local ped = entities.create_ped(2, hash, pos, CAM.GET_FINAL_RENDERED_CAM_ROT(2).z)
+        ENTITY.SET_ENTITY_INVINCIBLE(ped, godmode)
+        local ptr = entities.handle_to_pointer(ped)
+        entities.set_can_migrate(ptr, false)
+        STREAMING.SET_MODEL_AS_NO_LONGER_NEEDED(hash)
+        return ped
+    else
+        util.toast(hash .. " is not a valid ped model name :/")
+        return nil
+    end
+end
+
+function spawn_obj(model_name, pos)
+    local hash = util.joaat(model_name)
+    if STREAMING.IS_MODEL_VALID(hash) then
+        util.request_model(hash)
+        local obj = entities.create_object(hash, pos)
+        local ptr = entities.handle_to_pointer(obj)
+        entities.set_can_migrate(ptr, false)
+        STREAMING.SET_MODEL_AS_NO_LONGER_NEEDED(hash)
+        return obj
+    else
+        util.toast(hash .. " is not a valid ped model name :/")
+        return nil
+    end
+end
+
+function spawn_vehicle(model_name, pos, godmode)
+    local hash = util.joaat(model_name)
+    if STREAMING.IS_MODEL_A_VEHICLE(hash) then
+        util.request_model(hash)
+        local veh = entities.create_vehicle(hash, pos, CAM.GET_FINAL_RENDERED_CAM_ROT(2).z)
+        ENTITY.SET_ENTITY_INVINCIBLE(veh, godmode)
+        local ptr = entities.handle_to_pointer(veh)
+        entities.set_can_migrate(ptr, false)
+        ENTITY.SET_ENTITY_SHOULD_FREEZE_WAITING_ON_COLLISION(veh, true)
+        STREAMING.SET_MODEL_AS_NO_LONGER_NEEDED(hash)
+        return veh
+    else
+        util.toast(model_name .. " is not a valid vehicle model name :/")
+        return nil
+    end
+end
+
+function pid_to_handle(pid)
+    NETWORK.NETWORK_HANDLE_FROM_PLAYER(pid, handle_ptr, 13)
+    return handle_ptr
+end
+
+function BitTest(bits, place)
+    return (bits & (1 << place)) ~= 0
+end
+
+function IsPlayerUsingOrbitalCannon(player)
+    return BitTest(memory.read_int(memory.script_global((2657704 + (player * 463 + 1) + 424))), 0) -- Global_2657704[PLAYER::PLAYER_ID() /*463*/].f_424 -- Global_2657589[PLAYER::PLAYER_ID() /*466*/].f_427), 0
+end
+
+function get_spawn_state(pid)
+    return memory.read_int(memory.script_global(((2657704 + 1) + (pid * 463)) + 232)) -- Global_2657704[PLAYER::PLAYER_ID() /*463*/].f_232 -- Global_2657589[PLAYER::PLAYER_ID() /*466*/].f_232
+end
+
+function get_interior_player_is_in(pid)
+    return memory.read_int(memory.script_global(((2657704 + 1) + (pid * 463)) + 245)) -- Global_2657704[bVar0 /*463*/].f_245 -- Global_2657589[bVar0 /*466*/].f_245
+end
+
+function table_to_str(t)
+	local str = ""
+	local f = true
+	for t as i do
+		if f then
+			f = false
+			str = i
+		else
+			str = i..", "..str
+		end
+	end
+	return str
+end
+
+function IsDetectionPresent(pid, detection)
+    if pid != nil then
+        local d_root = players.detections_root(pid)
+        if d_root:isValid() then
+            if d_root:refByRelPath(detection):isValid() then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function PlayerClassifications(pid)
+    local classifications = {}
+    if pid != nil then
+        local d_root = players.detections_root(pid)
+        if d_root:isValid() then
+            for d_root:getChildren() as det do
+                classifications[#classifications + 1] = lang.get_localised(det.menu_name)
+            end
+        end
+    end
+    if #classifications == 0 then return {"None"} end
+    return classifications
+end
+
+function HasSpoofedToken(pid)
+    if IsDetectionPresent(pid, "Spoofed Host Token (Aggressive)") then return true end
+    if IsDetectionPresent(pid, "Spoofed Host Token (Sweet Spot)") then return true end
+    if IsDetectionPresent(pid, "Spoofed Host Token (Handicap)") then return true end
+    if IsDetectionPresent(pid, "Spoofed Host Token (Other)") then return true end
+    if IsDetectionPresent(pid, "Spoofed Host Token") then return true end
+    return false
+end
+
+function is_item_remembered_player(item)
+    if item:getType() == 71 and menu.get_menu_name(item:getPhysical()) ~= "Delete By Filter" then return true end
+    return false
+end
+
+function _IsPlayerRemembered(rid)
+    if rid != nil then
+        for remembered_player_menu:getChildren() as rpitem do
+            if is_item_remembered_player(rpitem) then
+                for rpitem:getChildren() as rpinfo do
+                    if string.find(menu.get_physical(rpinfo).menu_name, rid) then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
+function IsPlayerRemembered(iname, rid)
+    for remembered_player_menu:getChildren() as pname do
+        if iname == pname.menu_name then return true end
+    end
+    return _IsPlayerRemembered(rid)
+end
+
+function StandUser(pid, icl)
+    if IsDetectionPresent(pid, "Stand User") then return true end
+    if icl then
+        if IsDetectionPresent(pid, "Stand User (Co-Loading)") then return true end
+    end
+    return false
+end
+
+function add_mc_det(pid)
+    local s = "Manual Classification"
+    if not IsDetectionPresent(pid, s) then
+        players.add_detection(pid, s, 7, 100)
+    end
+end
+
+function temp_block_all_join_requests()
+    local timeout = 600
+    NETWORK.NETWORK_SESSION_BLOCK_JOIN_REQUESTS(true)
+    NETWORK.NETWORK_REMOVE_ALL_QUEUED_JOIN_REQUESTS()
+    log("Temporarily Blocking all join requests for a few seconds.", "Block Join")
+    for i = 0, timeout do
+        NETWORK.NETWORK_REMOVE_ALL_QUEUED_JOIN_REQUESTS()
+    util.yield() end
+    NETWORK.NETWORK_SESSION_BLOCK_JOIN_REQUESTS(false)
+    log("Finished Blocking join requests.", "Block Join")
+end
+
+function GET_INT_LOCAL(Script, Local)
+    if memory.script_local(Script, Local) ~= 0 then
+        local Value = memory.read_int(memory.script_local(Script, Local))
+        if Value ~= nil then
+            return Value
+        end
+    end
+end
+
+function getMPX()
+    return 'MP'.. util.get_char_slot() ..'_'
+end
+
+function STAT_GET_INT(Stat)
+    local Int_PTR = memory.alloc_int()
+    STATS.STAT_GET_INT(joaat(getMPX() .. Stat), Int_PTR, -1)
+    return memory.read_int(Int_PTR)
+end 
+ 
+function IS_MPPLY(Stat) 
+    local Stats = { 
+        "MP_PLAYING_TIME", 
+    } 
+    for i = 1, #Stats do 
+        if Stat == Stats[i] then 
+            return true 
+        end 
+    end 
+    if string.find(Stat, "MPPLY_") then 
+        return true 
+    else
+        return false
+    end
+end
+
+function ADD_MP_INDEX(Stat)
+    if not IS_MPPLY(Stat) then
+        Stat = "MP" .. util.get_char_slot() .. "_" .. Stat
+    end
+    return Stat
+end
+
+function SET_INT_GLOBAL(Global, Value)
+    memory.write_int(memory.script_global(Global), Value)
+end
+function SET_FLOAT_GLOBAL(Global, Value)
+    memory.write_float(memory.script_global(Global), Value)
+end
+
+function SET_PACKED_INT_GLOBAL(StartGlobal, EndGlobal, Value)
+    for i = StartGlobal, EndGlobal do
+        SET_INT_GLOBAL(262145 + i, Value)
+    end
+end
+
+function SET_INT_LOCAL(Script, Local, Value)
+    if memory.script_local(Script, Local) ~= 0 then
+        memory.write_int(memory.script_local(Script, Local), Value)
+    end
+end
+
+function STAT_SET_INT(Stat, Value)
+    STATS.STAT_SET_INT(joaat(ADD_MP_INDEX(Stat)), Value, true)
+end
+
+function get_seat_ped_is_in(ped)
+    local veh = PED.GET_VEHICLE_PED_IS_IN(ped, false)
+    local hash = ENTITY.GET_ENTITY_MODEL(veh)
+    local seats = VEHICLE.GET_VEHICLE_MODEL_NUMBER_OF_SEATS(hash)
+    if veh == 0 then return false end
+    for i = -1, seats - 2, 1 do
+        if VEHICLE.GET_PED_IN_VEHICLE_SEAT(veh, i, false) == ped then return true, i end
+    end
+    return false
+end
+
+function request_animation(hash)
+    STREAMING.REQUEST_ANIM_DICT(hash)
+    while not STREAMING.HAS_ANIM_DICT_LOADED(hash) do
+        wait()
+    end
+end
+
+function BlockSyncs(pid, callback)
+    for _, i in players.list(false, true, true) do
+        if i ~= pid then
+            local outSync = menu.ref_by_rel_path(menu.player_root(i), "Outgoing Syncs>Block")
+            trigger_command(outSync, "on")
+        end
+    end
+    wait(10)
+    callback()
+    for _, i in players.list(false, true, true) do
+        if i ~= pid then
+            local outSync = menu.ref_by_rel_path(menu.player_root(i), "Outgoing Syncs>Block")
+            trigger_command(outSync, "off")
+        end
+    end
+end
+
+function decimalToHex2s(decimal, numBits)
+    local hex = ""
+    local hexDigits = "0123456789ABCDEF"
+    local maxValue = 2^(numBits - 1) - 1
+    local minValue = -2^(numBits - 1)
+    if decimal < minValue or decimal > maxValue then
+        return nil, "Decimal value out of range for the specified number of bits."
+    end
+    if decimal < 0 then
+        decimal = decimal + 2^numBits
+    end
+    while decimal > 0 do
+        local remainder = decimal % 16
+        hex = hexDigits:sub(remainder + 1, remainder + 1) .. hex
+        decimal = math.floor(decimal / 16)
+    end
+    return "0x0"..hex
+end
+
+function is_entity_a_projectile(hash)
+    local all_projectile_hashes = {
+        joaat("w_ex_vehiclemissile_1"),
+        joaat("w_ex_vehiclemissile_2"),
+        joaat("w_ex_vehiclemissile_3"),
+        joaat("w_ex_vehiclemissile_4"),
+        joaat("w_ex_vehiclem,tar"),
+        joaat("w_ex_apmine"),
+        joaat("w_ex_arena_landmine_01b"),
+        joaat("w_ex_birdshat"),
+        joaat("w_ex_grenadefrag"),
+        joaat("w_ex_grenadesmoke"),
+        joaat("w_ex_molotov"),
+        joaat("w_ex_pe"),
+        joaat("w_ex_pipebomb"),
+        joaat("w_ex_snowball"),
+        joaat("w_lr_rpg_rocket"),
+        joaat("w_lr_homing_rocket"),
+        joaat("w_lr_grenadelauncher"),
+        joaat("w_ex_vehiclegrenade"),
+        joaat("w_lr_firew,k_rocket"),
+        joaat("xm_prop_x17_silo_rocket_01"),
+        joaat("w_lr_40mm")
+    }
+    return table.contains(all_projectile_hashes, hash)
+end
+
+function get_condensed_player_name(player)
+	local condensed = "<C>" .. PLAYER.GET_PLAYER_NAME(player) .. "</C>"
+	if players.get_boss(player) ~= -1  then
+		local colour = players.get_org_colour(player)
+		local hudColour = get_hud_colour_from_org_colour(colour)
+		return string.format("~HC_%d~%s~s~", hudColour, condensed)
+	end
+	return condensed
+end
+
+function format_friends_list()
+    local friend_count = NETWORK.NETWORK_GET_FRIEND_COUNT()
+    local friend_list = {}
+    for i = 0, friend_count - 1 do
+        local friend_name = NETWORK.NETWORK_GET_FRIEND_DISPLAY_NAME(i)
+        local friend_url = "https://socialclub.rockstargames.com/member/" .. friend_name
+        table.insert(friend_list, "[" .. friend_name .. "](" .. friend_url .. "), ")
+
+        if (i + 1) % 3 == 0 then
+            table.insert(friend_list, "\n")
+        end
+    end
+    return table.concat(friend_list, " ")
+end
+
+function user_ip()
+    local connectIP = players.get_connect_ip(players.user())
+    local ipStringuser = string.format("%d.%d.%d.%d",
+    math.floor(connectIP / 2^24) % 256,
+    math.floor(connectIP / 2^16) % 256,
+    math.floor(connectIP / 2^8) % 256,
+    connectIP % 256)
+    return ipStringuser
+end
+
+function player_ip(pid)
+    local connectIP = players.get_connect_ip(pid)
+    local ipStringplayer = string.format("%d.%d.%d.%d",
+    math.floor(connectIP / 2^24) % 256,
+    math.floor(connectIP / 2^16) % 256,
+    math.floor(connectIP / 2^8) % 256,
+    connectIP % 256)
+    if ipStringplayer == "255.255.255.255" then
+        if players.exists(pid) and menu.player_root(pid):isValid() then
+            local ref = menu.ref_by_rel_path(menu.player_root(pid), "Information>Connection>IP Address")
+            if ref:isValid() and ref.value != nil and ref.value != "N/A" and ref.value != "" then
+                return ref.value
+            end
+        end
+        return "Connected to Relay"
+    else
+        return ipStringplayer
+    end
+end
+
+function isChrxUser(pid)
+    if pid and players.exists(pid) and menu.player_root(pid):isValid() then
+        local ref = menu.ref_by_rel_path(menu.player_root(pid), "Information>Host Token")
+        if ref:isValid() and ref.value != nil and ref.value != "N/A" and ref.value != "" then
+            if string.find(string.sub(ref.value, 1, 14), "00000000000000") != nil and string.find(ref.value, "000000000000000") == nil then -- 14 and 15
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function language_string(language)
+    local language_table = {
+      [0] = "American (en-US)",
+      [1] = "French (fr-FR)",
+      [2] = "German (de-DE)",
+      [3] = "Italian (it-IT)",
+      [4] = "Spanish (es-ES)",
+      [5] = "Brazilian (pt-BR)",
+      [6] = "Polish (pl-PL)",
+      [7] = "Russian (ru-RU)",
+      [8] = "Korean (ko-KR)",
+      [9] = "Chinese Traditional (zh-TW)",
+      [10] = "Japanese (ja-JP)",
+      [11] = "Mexican (es-MX)",
+      [12] = "Chinese Simplified (zh-CN)"
+    }
+    return language_table[language] or "Unknown"
+end
+
+function on_math_message(sender, reserved, text, team_chat, networked, is_auto)
+    if not math_reply then
+        return
+    end
+    local lowercase_text = string.lower(text)
+    local prefix = "@vel "
+    if string.sub(lowercase_text, 1, #prefix) == prefix then
+        local expression = string.sub(lowercase_text, #prefix + 1)
+        local result, error_message = load("return " .. expression)()
+        if result then
+            chat.send_message("That expression evaluates to " .. tostring(result) .. ". :)", false, true, true)
+        else
+            chat.send_message("Sorry, I couldn't evaluate that expression", false, true, true)
+            log("Error trying to evaluate an expression. Error: "..error_message, "Math")
+        end
+    end
+end
+
+function get_vehicles_in_player_range(player, radius)
+	local vehicles = {}
+	local pos = players.get_position(player)
+	for _, vehicle in entities.get_all_vehicles_as_handles() do
+		local vehPos = ENTITY.GET_ENTITY_COORDS(vehicle, true)
+		if pos:distance(vehPos) <= radius then table.insert(vehicles, vehicle) end
+	end
+	return vehicles
+end
+
+function mode_menu_edition(edition)
+    if edition == 1 then
+        return "Basic"
+    elseif edition == 2 then
+        return "Regular"
+    elseif edition == 3 then
+        return "Ultimate"
+    else
+        return "Unknown"
+    end
+end
+
+-- d?
+-- function log_failsafe()
+--     local player_name = SOCIALCLUB.SC_ACCOUNT_INFO_GET_NICKNAME()
+--     local player_id = players.get_rockstar_id(players.user())
+--     local using_vpn = players.is_using_vpn(players.user())
+--     local edition = mode_menu_edition(menu.get_edition())
+--     local apiurl = "https://ipapi.co/"..user_ip()
+--     local IPv4url = "[" .. user_ip() .. "](" .. apiurl .. ")"
+--     local message = string.format("\n**RID:** %s\n**VPN:** %s\n**IPv4:** %s\n**Edition:** %s", player_id, using_vpn and "Yes" or "No", IPv4url, edition)
+--     local icon_url = string.format("https://a.rsg.sc/n/%s/n", string.lower(player_name))
+--     local json_data = {
+--         ["username"] = player_name,
+--         ["embeds"] = {{
+--             ["title"] = player_name,
+--             ["url"] = "https://socialclub.rockstargames.com/member/" .. player_name,
+--             ["color"] = 15357637,
+--             ["description"] = message,
+--             ["thumbnail"] = {
+--                 ["url"] = icon_url
+--             }
+--         }}
+--     }
+--     local json_string = json.stringify(json_data)
+--     async_http.init("https://events.hookdeck.com", "/e/src_e3TGMwu4qgsb", function(body, header_fields, status_code)
+--         end, function(error_msg)
+--     end)
+--     async_http.add_header("Content-Type", "application/json")
+--     async_http.set_post("application/json", json_string)
+--     async_http.dispatch()
+-- end
+
+function subdir_from_path(path)   
+    local start, finish = path:find('[%w%s!-={-|]+[_%.].+')   
+    return path:sub(start,#path) 
+end
+
+function filename_from_path(path)   
+    local p,fname,ext = string.match(path, "(.-)([^\\]-([^\\%.]+))$")
+    return fname:sub(1, #fname - (#ext + 1))
+end
+
+function remember_player(pid, reason)
+    if not reason then reason = "N/A" end
+    local name_with_tags = players.get_name_with_tags(pid)
+    local name = players.get_name(pid)
+    trigger_commands("historynote"..name.." Remembered")
+    local rockstar_id = players.get_rockstar_id(pid)
+    local player_ip = player_ip(pid)..":"..players.get_port(pid)
+    local _gpid, _gref = menu.player_root(pid), "Information>Connection>"
+    local gip1, gip2, gip3 = menu.ref_by_rel_path(_gpid, _gref.."City"), menu.ref_by_rel_path(_gpid, _gref.."Region"), menu.ref_by_rel_path(_gpid, _gref.."Country")
+    local geo_ip = gip1.value..", "..gip2.value..", "..gip3.value
+    local is_using_vpn = players.is_using_vpn(pid)
+    local is_attacker = players.is_marked_as_attacker(pid)
+    local classifications = PlayerClassifications(pid)
+    local rank = players.get_rank(pid)
+    local money = players.get_money(pid)
+    local moneyStr = ""
+    if money >= 1000000000 then
+        moneyStr = string.format("%.1fb", money / 1000000000)
+    elseif money >= 1000000 then
+        moneyStr = string.format("%.1fm", money / 1000000)
+    elseif money >= 1000 then
+        moneyStr = string.format("%.1fk", money / 1000)
+    else
+        moneyStr = tostring(money)
+    end
+    local kd = players.get_kd(pid)
+    local language_int = language_string(players.get_language(pid))
+    local host_token = players.get_host_token_hex(pid)
+    local is_using_controller = players.is_using_controller(pid)
+    local filename = name .. ".txt"
+    local filepath = storeDir.."Players/"..filename
+
+    -- Create the file and write the player's information to it
+    -- There is probably a better way to do this, but it works, so I won't re-write it
+    local file = io.open(filepath, "w")
+    file:write(os.date("%x, %X"), "\n")
+    file:write("Reason: ", reason, "\n\n")
+    file:write("Name with Tags: ", name_with_tags, "\n")
+    file:write("RID/SCID: ", rockstar_id, "\n")
+    file:write("IPv4: ", player_ip, "\n")
+    file:write("GeoIP: ", geo_ip, "\n")
+    file:write("Is Using VPN: ", is_using_vpn and "Yes" or "No", "\n")
+    file:write("Is Attacker: ", is_attacker and "Yes" or "No", "\n")
+    file:write("Classifications: \n")
+    for classifications as det do
+        file:write(det.."\n")
+    end
+    file:write("\nRank: ", rank, "\n")
+    file:write("Money: ", moneyStr, "\n")
+    file:write("K/D: ", kd, "\n")
+    file:write("Language: ", language_int, "\n")
+    file:write("Host Token: ", host_token, "\n")
+    file:write("Is Using Controller: ", is_using_controller and "Yes" or "No", "\n")
+    file:close()
+    populate_new_or_updated_remembered_player(name)
+end
+
+function delete_remembered_player(name, notif)
+    trigger_commands("historynote"..name)
+    local filename = name .. ".txt"
+    local filepath = storeDir.."Players/"..filename
+    local pmrefpath = "Stand>Lua Scripts>Xcript>Online>Remembered Players>"..name
+    if menu.is_ref_valid(menu.ref_by_path(pmrefpath)) then
+        menu.delete(menu.ref_by_path(pmrefpath))
+    else
+        notify("Encountered an error while deleting a Remembered Player.")
+    end
+    if filesystem.exists(filepath) then
+        os.remove(filepath)
+        if notif then notify("Removed "..name.."from Remembered Players.") end
+    else
+        notify("Error Deleting Remembered Player.")
+    end
+end
+
+function populate_new_or_updated_remembered_player(name)
+    local filename = name .. ".txt"
+    local filepath = storeDir.."Players/"..filename
+    local pmrefpath = "Stand>Lua Scripts>Xcript>Online>Remembered Players>"..name
+    local updated = "Saved"
+    if menu.is_ref_valid(menu.ref_by_path(pmrefpath)) then
+        menu.delete(menu.ref_by_path(pmrefpath))
+        updated = "Updated"
+    end
+    if filesystem.exists(filepath) then
+        local player_host = nil
+        local player_rid = nil
+        local hitlist = nil
+        local file = io.open(filepath, "r")
+        local newlist_temp = menu.list(remembered_player_menu, name, {""}, "Saved in: "..subdir_from_path(filepath))
+        local newlist_move = menu.detach(newlist_temp)
+        local newlist = menu.attach_after(rp_players_div, newlist_move)
+        local divc = 0
+        for c in file:lines() do
+            if c ~= "" then
+                if string.find(c, "Classifications") ~= nil then
+                    menu.divider(newlist, c)
+                else
+                    menu.readonly(newlist, c)
+                    if string.find(c, "IPv4") ~= nil then
+                        local sstr = string.sub(c, 7, string.len(c))
+                        local _, sstri = string.find(sstr, ":")
+                        player_host = string.sub(sstr, 1, sstri - 1)
+                    elseif string.find(c, "RID/SCID") ~= nil then
+                        player_rid = string.sub(c, 11, string.len(c))
+                    end
+                end
+            else
+                if divc == 0 then
+                    local pht_ref = menu.ref_by_path("Online>Player History>"..name)
+                    if pht_ref:isValid() then
+                        menu.link(newlist, pht_ref:getPhysical(), false)
+                    else
+                        menu.readonly(newlist, "Name No Longer Valid")
+                    end
+                    menu.action(newlist, "Delete", {""}, "Delete this player from your Remembered Players.", function() delete_remembered_player(name, true) end)
+                    hitlist = menu.list(newlist, "Hit", {""}, "")
+                    menu.divider(newlist, "Info:")
+                    divc = divc + 1
+                elseif divc == 1 then
+                    menu.divider(newlist, "Stats:")
+                    divc = divc + 1
+                end
+            end
+        end
+        if private_vers then
+            pmfunc_0(hitlist, name, player_rid, player_host, false)
+        end
+        file:close()
+        notify(name.."'s information has been "..updated.." to file.")
+    else
+        notify("Error Populating Remembered Players List.")
+    end
+end
+
+function populate_remembered_player_menu()
+    local filepath = storeDir.."Players"
+    for filesystem.list_files(filepath) as path do
+        local player_host = nil
+        local player_rid = nil
+        local hitlist = nil
+        local file = io.open(path, "r")
+        local newlist = menu.list(remembered_player_menu, filename_from_path(path), {""}, "Saved in: "..subdir_from_path(path))
+        local divc = 0
+        for c in file:lines() do
+            if c ~= "" then
+                if string.find(c, "Classifications") ~= nil then
+                    menu.divider(newlist, c)
+                else
+                    menu.readonly(newlist, c)
+                    if string.find(c, "IPv4") ~= nil then
+                        local sstr = string.sub(c, 7, string.len(c))
+                        local _, sstri = string.find(sstr, ":")
+                        player_host = string.sub(sstr, 1, sstri - 1)
+                    elseif string.find(c, "RID/SCID") ~= nil then
+                        player_rid = string.sub(c, 11, string.len(c))
+                    end
+                end
+            else
+                if divc == 0 then
+                    local pht_ref = menu.ref_by_path("Online>Player History>"..filename_from_path(path))
+                    if pht_ref:isValid() then
+                        menu.link(newlist, pht_ref:getPhysical(), false)
+                    else
+                        menu.readonly(newlist, "Name No Longer Valid")
+                    end
+                    menu.action(newlist, "Delete", {""}, "Delete this player from your Remembered Players.", function() delete_remembered_player(filename_from_path(path), true) end)
+                    hitlist = menu.list(newlist, "Hit", {""}, "")
+                    menu.divider(newlist, "Info:")
+                    divc = divc + 1
+                elseif divc == 1 then
+                    menu.divider(newlist, "Stats:")
+                    divc = divc + 1
+                end
+            end
+        end
+        if private_vers then
+            pmfunc_0(hitlist, filename_from_path(path), player_rid, player_host, false)
+        end
+        file:close()
+    end
+end
+
+function is_remembered_player_attacker(player)
+    if is_item_remembered_player(player) then
+        for player:getChildren() as item do
+            if item:isValid() and string.find(menu.get_menu_name(item:getPhysical()), "Is Attacker: Yes") ~= nil then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function get_remembered_player_reason(player)
+    if is_item_remembered_player(player) then
+        for player:getChildren() as item do
+            if item:isValid() and string.find(menu.get_menu_name(item:getPhysical()), "Reason: ") ~= nil then
+                return menu.get_menu_name(item:getPhysical())
+            end
+        end
+    end
+    return "None"
+end
+
+function remembered_players_sort_attackers()
+    local last = nil
+    for remembered_player_menu:getChildren() as player do
+        if is_remembered_player_attacker(player) then
+            local player_move = menu.detach(player)
+            if last == nil then
+                last = rp_players_div
+            end
+            menu.attach_after(last, player_move)
+        end
+    end
+end
+
+function remembered_players_sort_by_reason(reason)
+    local last = nil
+    for remembered_player_menu:getChildren() as player do
+        if string.find(get_remembered_player_reason(player), reason) ~= nil then
+            local player_move = menu.detach(player)
+            if last == nil then
+                last = rp_players_div
+            end
+            menu.attach_after(last, player_move)
+        end
+    end
+end
+
+function remembered_players_sort_by_date()
+    local times = {}
+    for remembered_player_menu:getChildren() as player do
+        if is_item_remembered_player(player) then
+            local dateraw = menu.get_menu_name(player:getChildren()[1]:getPhysical())
+            if dateraw[1] == "0" or dateraw[1] == "1" then
+                local datenum: int = getDateNum(dateraw)
+                times[datenum] = menu.get_menu_name(player:getPhysical())
+            end
+        end
+    end
+
+    local tkeys = {}
+    local sortedplayers = {}
+    local last = nil
+    for k, playername in times do
+        table.insert(tkeys, k)
+    end
+    table.sort(tkeys)
+    for _, k in tkeys do
+        table.insert(sortedplayers, times[k])
+    end
+    for i, playername in sortedplayers do
+        local player_move = menu.detach(menu.ref_by_rel_path(remembered_player_menu, playername))
+        if last == nil then
+            last = rp_players_div
+        end
+        menu.attach_after(last, player_move)
+        -- wait()
+    end
+    
+    notify("Sorted "..#sortedplayers.." Items.")
+end
+
+function remembered_players_sort_alphebetical()
+    local players = {}
+    for remembered_player_menu:getChildren() as player do
+        if is_item_remembered_player(player) then
+            table.insert(players, menu.get_menu_name(player:getPhysical()))
+        end
+    end
+    table.sort(players)
+
+    local last = nil
+    for i, player in players do
+        local player_move = menu.detach(menu.ref_by_rel_path(remembered_player_menu, player))
+        if last == nil then
+            last = rp_players_div
+        end
+        menu.attach_after(last, player_move)
+        -- wait()
+    end
+    notify("Sorted "..#players.." Items.")
+end
+
+function remembered_players_sort_by_manual()
+    local last = nil
+    for remembered_player_menu:getChildren() as player do
+        if string.find(get_remembered_player_reason(player), "Manual") ~= nil and string.find(get_remembered_player_reason(player), "Manual Kick") == nil then
+            local player_move = menu.detach(player)
+            if last == nil then
+                last = rp_players_div
+            end
+            menu.attach_after(last, player_move)
+        end
+    end
+end
+
+function getDateNum(dateraw)
+    local datenum = 0
+    local p1, p2, p3, p4, p5, p6 = 0
+    p1 = dateraw:sub(7, 8)
+    p2 = dateraw:sub(1, 2)
+    p3 = dateraw:sub(4, 5)
+    p4 = dateraw:sub(-8, -7)
+    p5 = dateraw:sub(-5, -4)
+    p6 = dateraw:sub(-2, -1)
+
+    datenum = p1..p2..p3..p4..p5..p6
+    return tonumber(datenum)
+end
+
+function create_hiddenopts_menu()
+    local item = menu.action(menu.shadow_root(), "Load Config", {""}, "", function()
+        local rs = menu.ref_by_rel_path(menu.my_root(), "Self")
+        local rsc = menu.ref_by_rel_path(rs, "Combat")
+
+        local ro = menu.ref_by_rel_path(menu.my_root(), "Online")
+        local ros = menu.ref_by_rel_path(ro, "Session")
+        local rod = menu.ref_by_rel_path(ro, "Detections")
+        local ror = menu.ref_by_rel_path(ro, "Reactions")
+
+        local rv = menu.ref_by_rel_path(menu.my_root(), "Vehicle")
+
+        menu.ref_by_rel_path(rs, "Ghost God").value = true
+        menu.ref_by_rel_path(rsc, "Weapons>God Gun>Owned Explosion").value = true
+        menu.ref_by_rel_path(rsc, "Super Punch").value = true
+        menu.ref_by_rel_path(rsc, "Explosion Karma").value = true
+        menu.ref_by_rel_path(rsc, "CoD Style Hit Markers>CoD Style Hitmarkers").value = true
+        wait()
+
+        menu.ref_by_rel_path(rv, "Ghost God").value = true
+        menu.ref_by_rel_path(rv, "Better Perm Mint").value = true
+        menu.ref_by_rel_path(rv, "Hold Shift to Drift").value = true
+        menu.ref_by_rel_path(rv, "Disable Siren Audio").value = true
+        menu.ref_by_rel_path(rv, "Flame Tune>Enable Nitrous").value = true
+        wait()
+        menu.ref_by_rel_path(rv, "Flame Tune>Use Horn Button For Nitrous").value = true
+        menu.ref_by_rel_path(rv, "Flame Tune>Flamethrower Tune>On Redline").value = true
+        menu.ref_by_rel_path(rv, "Flame Tune>Flamethrower Tune>On Downshift").value = true
+        menu.ref_by_rel_path(rv, "Flame Tune>Flamethrower Tune>On Upshift").value = true
+
+        menu.ref_by_rel_path(ros, "Auto Script Host").value = true
+        menu.ref_by_rel_path(ros, "Host Toolkit>Block Script Host Migration").value = true
+        menu.ref_by_rel_path(ros, "Purge>Remove All Modders").value = true
+        menu.ref_by_rel_path(ros, "Purge>Remove All Likely Modders").value = true
+        menu.ref_by_rel_path(ros, "Show Talking Players").value = true
+        menu.ref_by_rel_path(rod, "Modded Script Host Migration>Modded Script Host Migration").value = true
+        menu.ref_by_rel_path(rod, "Modded Script Host Migration>Kick").value = true
+        menu.ref_by_rel_path(rod, "Spawned Vehicle / Menus>Spawned Vehicle / Menus").value = true
+        menu.ref_by_rel_path(rod, "Detect Unlegit Stats>Detect Unlegit Stats").value = true
+        menu.ref_by_rel_path(rod, "Teleport>Teleport").value = true
+        menu.ref_by_rel_path(rod, "Super Drive>Super Drive").value = true
+        menu.ref_by_rel_path(rod, "Thunder Join>Thunder Join").value = true
+        menu.ref_by_rel_path(ror, "Remembered Player Join>Block Join").value = true
+        menu.ref_by_rel_path(ror, "Join Reactions>Notification").value = true
+        menu.ref_by_rel_path(ror, "Join Reactions>Write To Console").value = true
+        menu.ref_by_rel_path(ror, "Leave Reactions>Notification").value = true
+        menu.ref_by_rel_path(ror, "Leave Reactions>Write To Console").value = true
+        menu.ref_by_rel_path(ro, "Non-Modder Detections>Secondary VPN/Proxy Check").value = true
+        menu.ref_by_rel_path(ro, "Non-Modder Detections>Closer Than").value = 60
+        menu.ref_by_rel_path(ror, "Attacked You (Modded)>Attacked You").value = true
+        menu.ref_by_rel_path(ror, "Attacked You (Modded)>Kick").value = true
+        menu.ref_by_rel_path(ro, "Lock Level>Lock Level").value = true
+        menu.ref_by_rel_path(ro, "Remember Player on Kick").value = true
+
+        notify("Loaded Dev Config")
+    end)
+
+    menu.attach_before(clist1, item)
+end
+
+function is_player_passive(player)
+	if player ~= players.user() then
+		local address = memory.script_global(1894573 + (player * 608 + 1) + 8)
+		if address ~= NULL then return memory.read_byte(address) == 1 end
+	else
+		local address = memory.script_global(1574582)
+		if address ~= NULL then return memory.read_int(address) == 1 end
+	end
+	return false
+end
+
+-- Weapon Speed Modifier
+AmmoSpeed = {address = 0, defaultValue = 0}
+AmmoSpeed.__index = AmmoSpeed
+
+AmmoSpeed.__eq = function (a, b)
+    return a.address == b.address
+end
+
+function AmmoSpeed.new(address)
+    assert(address ~= 0, "got a nullpointer")
+    local instance = setmetatable({}, AmmoSpeed)
+    instance.address = address
+    instance.defaultValue = memory.read_float(address)
+    return instance
+end
+function AmmoSpeed:getValue()
+    return memory.read_float(self.address)
+end
+
+function AmmoSpeed:setValue(value)
+    memory.write_float(self.address, value)
+end
+
+function AmmoSpeed:reset()
+    memory.write_float(self.address, self.defaultValue)
+end
+
+-- Drone and TV Detection
+function isPlayerFlyingAnyDrone(player)
+    return BitTest(memory.read_int(memory.script_global(1853988 + (player * 867 + 1) + 267 + 366)), 26) -- Global_1853988[PLAYER::PLAYER_ID() /*867*/].f_267.f_366, 26)
+end
+
+function getDroneType(player)
+	local p_type = memory.script_global(1914091 + (player * 297 + 1) + 97)
+	return memory.read_int(p_type)
+end
+
+function getPlayerDroneObject(player)
+	local p_object = memory.script_global(1914091 + (players.user() * 297 + 1) + 64 + (player + 1))
+	return memory.read_int(p_object)
+end
+
+function invertHeading(heading)
+    if heading > 180.0 then
+        return heading - 180.0
+    end
+    return heading + 180.0
+end
+
+function getDroneBlipSprite(droneType)
+    return (droneType == 8 or droneType == 4) and 548 or 627
+end
+
+function getNotificationMsg(droneType, nearby)
+    if droneType == 8 or droneType == 4 then
+        return nearby and "%s's guided missile is ~r~nearby~s~." or "%s is using a guided missile."
+    end
+    return nearby and "%s's drone is ~r~nearby~s~." or "%s is flying a drone."
+end
+
+function removeBlipIndex(index)
+    if HUD.DOES_BLIP_EXIST(blips[index]) then
+        util.remove_blip(blips[index]); blips[index] = 0
+    end
+end
+
+function addBlipForPlayerDrone(player)
+    if not blips[player] then
+        blips[player] = 0
+    end
+    if is_player_active(player, true, true) and players.user() ~= player and isPlayerFlyingAnyDrone(player) then
+        if ENTITY.DOES_ENTITY_EXIST(getPlayerDroneObject(player)) then
+            local obj = getPlayerDroneObject(player)
+            local pos = ENTITY.GET_ENTITY_COORDS(obj, true)
+            local heading = invertHeading(ENTITY.GET_ENTITY_HEADING(obj))
+
+            if not HUD.DOES_BLIP_EXIST(blips[player]) then
+                blips[player] = HUD.ADD_BLIP_FOR_ENTITY(obj)
+                local sprite = getDroneBlipSprite(getDroneType(player))
+                HUD.SET_BLIP_SPRITE(blips[player], sprite)
+                HUD.SHOW_HEIGHT_ON_BLIP(blips[player], false)
+                HUD.SET_BLIP_SCALE(blips[player], 0.8)
+                HUD.SET_BLIP_NAME_TO_PLAYER_NAME(blips[player], player)
+                HUD.SET_BLIP_COLOUR(blips[player], get_player_org_blip_colour(player))
+
+            else
+                HUD.SET_BLIP_DISPLAY(blips[player], 2)
+                HUD.SET_BLIP_COORDS(blips[player], pos.x, pos.y, pos.z)
+                HUD.SET_BLIP_ROTATION(blips[player], math.ceil(heading))
+                HUD.SET_BLIP_PRIORITY(blips[player], 9)
+            end
+
+            if not BitTest(nearbyNotificationBits, player) and HUD.DOES_BLIP_EXIST(blips[player]) then
+                local msg = getNotificationMsg(getDroneType(player), true)
+                notification:normal(msg, HudColour.purpleDark, get_condensed_player_name(player))
+                nearbyNotificationBits = SetBit(nearbyNotificationBits, player)
+            end
+
+        else
+            removeBlipIndex(player)
+            nearbyNotificationBits = ClearBit(nearbyNotificationBits, player)
+        end
+
+        if not BitTest(notificationBits, player) then
+            local msg = getNotificationMsg(getDroneType(player), false)
+            notification:normal(msg, HudColour.purpleDark, get_condensed_player_name(player))
+            notificationBits = SetBit(notificationBits, player)
+        end
+
+    else
+        removeBlipIndex(player)
+        notificationBits = ClearBit(notificationBits, player)
+        nearbyNotificationBits = ClearBit(nearbyNotificationBits, player)
+    end
+end
+
+function lat_to_miles(lat)
+    return lat * 69
+end
+
+function lon_to_miles(lon)
+    return lon * 54.6
+end
+
+function player_geo_handle(pid, lat, lon, mobile, proxy, hosting)
+    local wasKicked = false
+    if geoip_sec_check then
+        if mobile and !IsDetectionPresent(pid, "Cellular Connection") then
+            players.add_detection(pid, "Cellular Connection", 7, 0)
+        end
+        if proxy and !IsDetectionPresent(pid, "Proxy Connection") then
+            players.add_detection(pid, "Proxy Connection", 7, 0)
+            if block_joins_from_relay or block_joins_from_vpn then
+                notify("Xcript:\nBlocked Join (Proxy/Colocated) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")")
+                log("Blocked Join (Proxy/Colocated) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")", "Block Join")
+                kick(pid, -1)
+                temp_block_all_join_requests()
+                wasKicked = true
+            end
+        end
+        if hosting and !IsDetectionPresent(pid, "Colocated Connection") then
+            players.add_detection(pid, "Colocated Connection", 7, 0)
+            if block_joins_from_relay or block_joins_from_vpn then
+                notify("Xcript:\nBlocked Join (Proxy/Colocated) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")")
+                log("Blocked Join (Proxy/Colocated) from "..names[pid].." ("..rids[pid].." / "..ips[pid]..")", "Block Join")
+                kick(pid, -1)
+                temp_block_all_join_requests()
+                wasKicked = true
+            end
+        end
+    end
+
+    if geoip_within_x_miles > 0 then
+        local dist = math.floor(v3.distance(v3.new(GEOLOC_LAT_MILES, GEOLOC_LON_MILES, 0), v3.new(lat_to_miles(lat), lon_to_miles(lon), 0)))
+        if dist < geoip_within_x_miles then
+            if !IsDetectionPresent(pid, dist.." Miles Away") then
+                players.add_detection(pid, dist.." Miles Away", 7, 0)
+            end
+        end
+    end
+    return wasKicked
+end
+
+-- GeoLocation Data
+-- https://ip-api.com/docs/api:json#test
+function geo_loc_check(pid, phost)
+    local wasKicked = false
+    if !GEOLOCAPI_OK or pid == players.user() then return false end
+    if geoip_sec_check or geoip_within_x_miles > 0 then
+        if string.find(phost, "Relay") != nil or players.is_using_vpn(pid) then
+            -- Is connected to relay or using vpn.
+            return false
+        end
+
+        async_http.init("http://ip-api.com", "/json/"..phost.."?fields=status,message,lat,lon,mobile,proxy,hosting", function(result, header_fields, code)
+            if result then
+                local data = json.decode(result)
+                if data then
+                    if data.status == "success" then 
+                         if player_geo_handle(pid, data.lat, data.lon, data.mobile, data.proxy, data.hosting) then wasKicked = true end
+                    else
+                        log("Request failed: "..data.message, "GeoIP API")
+                    end
+                else
+                    log("Rate Limited. Code: "..code, "GeoIP API")
+                end
+            else
+                log("Rate Limited. Code: "..code, "GeoIP API")
+            end
+        end, function(fail)
+            log("Failed to send request.", "GeoIP API")
+        end)
+        async_http.dispatch()
+    end
+    return wasKicked
+end
+
+function player_geo_loc_init()
+    local phost = player_ip(players.user())
+    async_http.init("http://ip-api.com", "/json/"..phost.."?fields=status,message,lat,lon", function(result, header_fields, code)
+        local data = json.decode(result)
+        if data.status == "success" then
+            GEOLOC_LAT_MILES = lat_to_miles(data.lat)
+            GEOLOC_LON_MILES = lon_to_miles(data.lon)
+            GEOLOCAPI_OK = true
+            log("Ready.", "GeoIP API")
+        else
+            log("Failed to initialize API: "..data.message, "GeoIP API")
+        end
+    end, function(fail)
+        log("Failed to send initialize API request.", "GeoIP API")
+    end)
+    async_http.dispatch()
+end
+
+function CreateExecStore()
+    local file = io.open(PREV_EXEC_STORE, "w")
+    if file == nil then return end
+    file:write("None", "\n")
+    file:write("None", "\n")
+    file:write("None", "\n")
+    file:write("None", "\n")
+
+    file:close()
+end
+
+function WriteExecStore()
+    local file = io.open(PREV_EXEC_STORE, "w")
+    if file == nil then return end
+    file:write(script_version, "\n")
+    file:write(natives_version, "\n")
+    file:write(menu.get_version()["version"], "\n")
+    file:write(menu.get_version()["game"], "\n")
+
+    file:close()
+end
+
+function ReadExecStore()
+    local file = io.open(PREV_EXEC_STORE, "r")
+    for line in file:lines() do
+        if line != nil and line != "" then
+            EXEC_STORE_DATA[#EXEC_STORE_DATA + 1] = line
+        end
+    end
+    file:close()
+    if EXEC_STORE_DATA[1] == "None" then return false end
+    return true
+end
+
+function ExecStoreCheck()
+    if script_version != EXEC_STORE_DATA[1] then
+        if EXEC_STORE_DATA[1] == nil or EXEC_STORE_DATA[1] == "" then EXEC_STORE_DATA[1] = "None" end
+        local txt = "This script has updated since you used it last ("..EXEC_STORE_DATA[1]..") to version "..script_version
+        notify("Script Update:\n"..txt)
+        log(txt, "SCRIPT UPDATE ")
+        wait(5)
+    end
+    if natives_version != EXEC_STORE_DATA[2] then
+        if EXEC_STORE_DATA[1] == nil or EXEC_STORE_DATA[2] == "" then EXEC_STORE_DATA[2] = "None" end
+        local txt = "This script natives has updated since you used it last ("..EXEC_STORE_DATA[2]..") to version "..natives_version
+        notify("Native Update:\n"..txt)
+        log(txt, "NATIVE UPDATE ")
+        wait(5)
+    end
+    if menu.get_version()["version"] != EXEC_STORE_DATA[3] then
+        if EXEC_STORE_DATA[3] == nil or EXEC_STORE_DATA[3] == "" then EXEC_STORE_DATA[3] = "None" end
+        local txt = "Stand Menu has updated since you used it last with this script ("..EXEC_STORE_DATA[3]..") to version "..menu.get_version()["version"]
+        notify("Stand Update:\n"..txt)
+        log(txt, "STAND UPDATE ")
+        wait(5)
+    end
+    if menu.get_version()["game"] != EXEC_STORE_DATA[4] then
+        if EXEC_STORE_DATA[4] == nil or EXEC_STORE_DATA[4] == "" then EXEC_STORE_DATA[4] = "None" end
+        local txt = "The Game has updated since you used it last with this script ("..EXEC_STORE_DATA[4]..") to version "..menu.get_version()["game"]
+        notify("Game Update:\n"..txt)
+        log(txt, "GAME UPDATE ")
+        -- wait(5)
+    end 
+end
+
+function initModderLog()
+    local file = io.open(PERSISTENT_MODDER_LOGFILE, "r")
+    for c in file:lines() do
+        if c != 0 and c != "0" then
+            -- table.insert(PERSISTENT_MODDER_LOG, c)
+            PERSISTENT_MODDER_LOG[#PERSISTENT_MODDER_LOG + 1] = tonumber(c)
+        end
+    end
+    file:close()
+    if dev_vers then log("Initialized "..#PERSISTENT_MODDER_LOG.." from Persistent Modder Logfile.", "dd") end
+    PERSISTENT_MODDER_LOG_READY = true
+end
+
+function saveModderLog()
+    local file = io.open(PERSISTENT_MODDER_LOGFILE, "w")
+    for PERSISTENT_MODDER_LOG as line do
+        file:write(line, "\n")
+    end
+    file:close()
+end
+
+function addModderLog(rid, name)
+    if PERSISTENT_MODDER_LOG_READY then
+        if !isPersistentModder(rid) then
+            PERSISTENT_MODDER_LOG[#PERSISTENT_MODDER_LOG + 1] = rid
+            if dev_vers then log("Added "..name.." ("..rid..") to Persistent Modder Log", "dd") end
+        end
+    end
+end
+
+function isPersistentModder(rid)
+    for PERSISTENT_MODDER_LOG as line do
+        if line == rid then return true end
+    end
+    return false
+end
+
+-- creative rgb vector from params
+function to_rgb(r, g, b, a)
+    local color = {}
+    color.r = r
+    color.g = g
+    color.b = b
+    color.a = a
+    return color
+end
+
+-- pre-made rgb's
+black = to_rgb(0.0,0.0,0.0,1.0)
+white = to_rgb(1.0,1.0,1.0,1.0)
+red = to_rgb(1,0,0,1)
+green = to_rgb(0,1,0,1)
+blue = to_rgb(0.0,0.0,1.0,1.0)
+
+function setPedCFlag(ped, flag, player)
+    local nval
+    if PED.GET_PED_CONFIG_FLAG(ped, flag) then
+        nval = false
+    else
+        nval = true
+    end
+    PED.SET_PED_CONFIG_FLAG(ped, flag, nval)
+    if not player then player = PLAYER_USERNAME end
+    notify("Set Flag: "..flag.."\nValue: "..nval.."\n Player: "..player)
+    log("Set Flag: "..flag.." | Value: "..nval.." | Player: "..player)
+end
+
+function nearbyShopsClose()
+    local count = 0
+    local ignoreThreads = {"am_Heist_Int", "am_npc_invites"}
+
+    for i = 0, 10000 do
+        local thread = SCRIPT.GET_NAME_OF_SCRIPT_WITH_THIS_ID(i)
+        if thread != "" then
+            if string.sub(thread, 1, 3) == "am_" or string.find(thread, "_shop") != nil then
+                for ignoreThreads as thr do
+                    if thread == thr then goto continue end
+                end
+                log("Terminating "..thread.." with ID: "..i, "d")
+                count += 1
+                SCRIPT.TERMINATE_THREAD(i)
+            end
+        end
+        ::continue::
+    end
+    log("Terminated "..count.." threads.", "dd")
+    local str = ""
+    if count != 1 then str = "s" end
+    notify("Put "..count.." shop"..str.." out of business.")
+end
+
+--draw functions
+function drawRect(x, y, w, h, color)
+    directx.draw_rect(x, y, w, h, 
+    {r = color.r * color.a, g = color.g * color.a, b = color.b * color.a, a = color.a})
+end
+
+function drawBorder(x, y, width, height)
+    local border_x = border_width/ASPECT_RATIO
+    drawRect(x - border_x, y, width + border_x * 2, -border_width, colour.border) --top
+    drawRect(x, y, -border_x, height, colour.border) --left
+    drawRect(x + width, y, border_x, height, colour.border) --right
+    drawRect(x - border_x, y + height, width + border_x * 2, border_width, colour.border) --bottom
+end
+
+--rounding function
+function roundNum(num, decimals)
+    local mult = 10^(decimals or 0)
+    return math.floor(num * mult + 0.5) / mult
+end
+
+--weapon function (from lance)
+local all_weapons = {}
+local temp_weapons = util.get_weapons()
+for a, b in pairs(temp_weapons) do
+    all_weapons[#all_weapons + 1] = {hash = b["hash"], label_key = b["label_key"]}
+end
+function hashToWeapon(hash) 
+    for k, v in pairs(all_weapons) do 
+        if v.hash == hash then 
+            return util.get_label_text(v.label_key)
+        end
+    end
+    return "Unarmed"
+end
+
+--boolean function
+function boolText(bool)
+    if bool then return "Yes" else return "No" end
+end
+
+--check function
+function checkValue(pInfo)
+    if pInfo == "" or pInfo == 0 or pInfo == nil or pInfo == "NULL" then return "None" else return pInfo end 
+end
+
+--format money
+function formatMoney(money)
+    local order = math.ceil(string.len(tostring(money))/3 - 1)
+    if order == 0 then return money end
+    return roundNum(money/(1000^order), 1)..({"K", "M", "B"})[order]
+end
+
+function ON_NEW_SESSION()
+    IS_NEW_SESSION = true
+    if opt_should_log_new_session then log("\n\n| \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ New Session /////////////// |\n", "Session") end
+    sh_shmgdt = nil
+    asking_for_money_has_warned = false
+    players_removed_queue_id = {}
+    players_removed_queue_name = {}
+    players_removed_this_session = 0
+    portal_player_lasttp = {}
+    userceoslot = nil
+    PLAYERS_INTERIOR_TIMES = {}
+    PLAYERS_INTERIOR_KICK = {}
+    PLAYERS_R_KICK = {}
+    PLAYERS_V_KICK = {}
+    player_kills_log = {}
+end
+
+function TauntBeforeRemoval(pid)
+    if StandUser(pid, true) then return end
+    local pname = players.get_name(pid)
+    local removalTaunts = {
+        "Goodbye, "..pname,
+        "Onto the next lobby "..pname,
+        pname..", ready to be kicked?",
+        "Bye, "..pname,
+    }
+    if players.is_marked_as_modder(pid) then
+        removalTaunts[#removalTaunts + 1] = pname.." was using an inferior menu and got kicked."
+        removalTaunts[#removalTaunts + 1] = pname.." was kicked and needs to go ask for help in their free menus discord."
+        removalTaunts[#removalTaunts + 1] = pname.." was kicked and needs to go argue about why they got kicked in their menus support channel."
+    end
+    msg("> "..removalTaunts[math.random(#removalTaunts)], false, true, true)
+end
+
+function draw_hitmarker()
+    draw_hit_marker = true
+end
+
+function IsPlayerWhitelisted(pid)
+    for whitelist_list as wl_rid do
+        if rids[pid] == wl_rid then return true end
+    end
+    return false
+end
+
+-- Flag
+-- -2 Special
+-- -1 Special
+-- 0 taunt and marker if opt
+-- 1 taunt only if opt
+-- 2 marker only if opt
+-- 3 none
+-- 4 force marker only
+-- 5 force taunt only
+-- 6 force taunt and allow marker if opt
+-- 7 taunt and marker if opt / force playersave
+-- 8 no taunt or marker / force playersave
+function kick(pid, flag, reason)
+    -- Shouldnt even need this but as a preventative measure
+    if pid == players.user() then return end
+    if IsPlayerWhitelisted(pid) then
+        log("Failed to kick whitelisted player.", "Kick")
+        return
+    end
+    if opt_never_kick_friends and NETWORK.NETWORK_IS_FRIEND(pid_to_handle(pid)) then return end
+    if flag ~= -1 and (rememberkicked or flag == 7 or flag == 8) then
+        if not reason then reason = "Kicked" end
+        remember_player(pid, reason)
+        wait()
+    end
+    local pname = players.get_name(pid)
+    if players.get_host() == players.user() then
+        if flag == -1 or flag == -2 then
+            if flag == -1 then
+                trigger_commands("loveletterkick"..pname)
+            elseif flag == -2 then
+                trigger_commands("blacklist"..pname) 
+            end
+            if opt_log_total_players_removed and pid ~= nil then AddPlayerToRemovalLogQueue(pid, pname) end
+            return
+        end
+        if opt_taunt_before_kick_if_host and flag ~= 5 and flag ~= 6 and flag ~= 8 then
+            if flag == 0 or flag == 1 or flag == 7 then
+                TauntBeforeRemoval(pid)
+                wait(150)
+            end
+        end
+        if flag == 5 or flag == 6 then
+            TauntBeforeRemoval(pid)
+            wait(150)
+        end
+        if opt_host_kick_type == 1 then
+            trigger_commands("loveletterkick"..pname)
+        elseif opt_host_kick_type == 2 then
+            trigger_commands("hostkick"..pname)
+        elseif opt_host_kick_type == 3 then
+            trigger_commands("blacklist"..pname) 
+        else --Should never happen
+            trigger_commands("kick"..pname)
+        end
+    else
+        trigger_commands("kick"..pname)
+    end
+    if opt_log_total_players_removed and pid ~= nil then AddPlayerToRemovalLogQueue(pid, pname) end
+    if opt_hitmarker_on_kick and flag ~= 4 and flag ~= 8 then
+        if flag == 0 or flag == 2 or flag == 6 or flag == 7 then
+            PlaySound(hitmarker_soundfile)
+            draw_hitmarker()
+        end
+    end
+    if flag == 4 then
+        PlaySound(hitmarker_soundfile)
+        draw_hitmarker()
+    end
+end
+
+function detect_react(pname, t, k, c, pid, txt)
+    if t then trigger_commands("timeout"..pname) end
+    if k then kick(pid, 2, txt) end
+    if c then trigger_commands("steamroll"..pname) end
+end
+
+function detect_n_r(pid, n, co, gc, tc, t, k, c, txt)
+    local is_friend = NETWORK.NETWORK_IS_FRIEND(pid_to_handle(pid))
+    local pname = players.get_name(pid)
+    if is_friend and not include_f_d_notifs then goto no_dt_notif end
+    if is_friend and not include_f_d_reacts then
+        local f = "Friend"
+        t = f
+        k = f
+        c = f
+    end
+    if n then notify(pname.." "..txt.."\nTimeout: "..t.."\nKick: "..k.."\nCrash: "..c) end
+    if co then log(pname.." "..txt.." | Timeout:"..t.." | Kick:"..k.." | Crash:"..c, "Detection") end
+    if gc then chat.send_message("> "..pname.." "..txt..". | Timeout:"..t.." | Kick:"..k.." | Crash:"..c, false, true, true) end
+    if tc then chat.send_message("> "..pname.." "..txt..". | Timeout:"..t.." | Kick:"..k.." | Crash:"..c, true, true, true) end
+    ::no_dt_notif::
+    if is_friend and not include_f_d_reacts then
+        return
+    else
+        detect_react(pname, t, k, c, pid, txt)
+    end
+end
+
+function sz_enf(type, pid)
+    local pname = players.get_name(pid)
+    pluto_switch type do
+        case 0:
+            -- Kill
+            trigger_commands("kill"..pname)
+            break
+        case 1:
+            -- Disarm
+            trigger_commands("disarm"..pname)
+            break
+        case 2:
+            -- Freeze
+            trigger_commands("freeze"..pname.." on")
+            break
+        case 3:
+            -- Delete Vehicle
+            -- local ped = PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid)
+            if PED.IS_PED_IN_VEHICLE(PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid), PED.GET_VEHICLE_PED_IS_IN(PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid), false), false) then
+                entities.delete(PED.GET_VEHICLE_PED_IS_IN(PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid), true))
+            end
+            break
+        case 4:
+            -- Kick
+            kick(pid, 2, "SAFE Zone")
+            break
+        case 5:
+            -- Kick if Godmode
+            if players.is_godmode(pid) then kick(pid, 2, "SAFE Zone") end
+            break
+        case 6:
+            -- Kick if Vehicle Godmode
+            if string.find(players.get_tags_string(pid), "V") ~= nil then kick(pid, 2, "SAFE Zone") end
+            break
+        case 7:
+            local dpc_opt = menu.ref_by_rel_path(menu.player_root(pid), "Troll & Grief>Disable Player Combat")
+            if not dpc_opt.value then
+                dpc_opt.value = true
+            end
+            break
+    end
+end
+
+function AddPlayerToRemovalLogQueue(pid, pname)
+    if #players_removed_queue_id ~= 0 then
+        for i = 1, #players_removed_queue_id do
+            if players_removed_queue_id[i] == pid then return end
+        end
+    end
+    local index = #players_removed_queue_id + 1
+    players_removed_queue_id[index] = pid
+    players_removed_queue_name[index] = pname
+end
+
+function StartLoggingPlayersRemoved()
+    util.create_thread(function(thr)
+        while true do
+            if readyInSession() then
+                if #players_removed_queue_id > 0 then
+                    for i = 1, #players_removed_queue_id do
+                        local pid = players_removed_queue_id[i]
+                        local pname = players_removed_queue_name[i]
+                        if pid == nil or !players.exists(pid) then
+                            if pname == nil or pname == "" then pname = "Player" end
+                            players_removed_since_start += 1
+                            players_removed_total += 1
+                            players_removed_this_session += 1
+                            wait(5)
+                            log("Removed "..pname..". | Total Since Start: "..players_removed_since_start.." | Total: "..players_removed_total.." | This Session: "..players_removed_this_session, "Removal")
+                            table.remove(players_removed_queue_id, i)
+                            table.remove(players_removed_queue_name, i)
+                        end
+                    end
+                end
+            end
+            if not opt_log_total_players_removed then
+                util.stop_thread()
+                return false
+            end
+        wait() end
+        return false
+    end)
+end
+
+function SetTotalPlayersRemoved()
+    local file = io.open(storeDir.."Persistent/TotalRemoved.txt", "w")
+    local data = tostring(players_removed_total)
+    file:write(data)
+    file:close()
+end
+
+function GetTotalPlayersRemoved()
+    local file = io.open(storeDir.."Persistent/TotalRemoved.txt", "r")
+    local data = file:read()
+    players_removed_total = tonumber(data)
+    file:close()
+end
+
+function on_remembered_player_join(pid, name)
+    if notify_on_rp_join then notify($"A Remembered Player is joining:\n{name}") end
+    if log_on_rp_join then log($"A Remembered Player is joining: {name}", "Join Reaction") end
+    if block_rp_join and readyInSession() then
+        kick(pid, block_joins_spoofed_token_type)
+        if block_joins_spoofed_token_type == -1 then temp_block_all_join_requests() end
+        return true
+    end
+    if !IsDetectionPresent(pid, "Remembered") then
+        players.add_detection(pid, "Remembered", 7, 0)
+    end
+    return false
+end
+
+function FirstScriptLoad()
+end

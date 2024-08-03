@@ -1,0 +1,170 @@
+
+-- Root Misc
+local misc = menu.list(menu.my_root(), "Misc", {"lmisc"}, default_help)
+
+-- Sub Tabs
+-----------------------
+local misc_options_opts = menu.list(misc, "Script Options", {"loptions"}, default_help)
+local shortcuts = menu.list(misc, "Shortcuts", {"lsc"}, "A few random shortcuts, nothing special.")
+
+---------------------
+-- Main
+---------------------
+-- Script Options
+menu.toggle(misc_options_opts, "Log New Session Divider", {""}, "", function(on)
+    opt_should_log_new_session = on
+end, true)
+
+menu.list_select(misc_options_opts, "Host Kick Type", {""}, "", {"Love Letter", "Host", "Blacklist"}, 1, function(val)
+    opt_host_kick_type = val
+end)
+
+menu.toggle(misc_options_opts, "Hitmarker on Kick", {""}, "(Kicks by this script).", function(on)
+    opt_hitmarker_on_kick = on
+end, true)
+
+menu.toggle(misc_options_opts, "Taunt Before Kick if Host", {""}, "Send a taunt in chat right before the player gets kicked (by this script).\nDoes NOT apply to all kicks by this script. Most kick related options with an option to send a message in the chat do not use this feature.\nDoes not taunt other Stand Users.", function(on)
+    opt_taunt_before_kick_if_host = on
+end)
+
+menu.toggle(misc_options_opts, "[Arrow Right] to Add Manual Classification", {""}, "Press [Arrow Right] on a players list to add a Manual Classification to the player.", function(on)
+    opt_arrowright_to_add_lmc = on
+end, true)
+
+menu.toggle(misc_options_opts, "Log Total Players Removed (This Script)", {""}, "Prints total players removed (by this script) to the console, as well as the total players removed by this script since it started running.\nDoes not count players removed if this is turned off.", function(on)
+    opt_log_total_players_removed = on
+    if on then
+        wait(200)
+        StartLoggingPlayersRemoved()
+    end
+end, true)
+
+menu.toggle(misc_options_opts, "Never Kick Friends", {""}, "", function(on)
+    opt_never_kick_friends = on
+end, true)
+
+misc_options_opts_hidetabs = menu.list(misc_options_opts, "Hide Tabs", {""}, "This does not change the state of the options within the tab.")
+
+for menu.my_root():getChildren() as tab do
+    if string.find(tab.menu_name, SCRIPT_NAME) == nil and string.find(tab.menu_name, "Init") == nil and string.find(tab.menu_name, "Misc") == nil and menu.get_type(tab) == 71 then
+        menu.toggle(misc_options_opts_hidetabs, "Hide "..tab.menu_name, {""}, "Hide this tab (in this script).", function(on)
+            menu.set_visible(tab, !on)
+        end)
+    end
+end
+
+menu.action(misc_options_opts, "Restart This Script", {"lrestartscript"}, "", function()
+    util.restart_script()
+end)
+
+-- Copy Command With Value
+menu.action(misc, "Copy Command With Value", {""}, "You need to bind a key to this.\nCopies the command and value of the focused menu item. Good for making command box scripts (handling presets etc.).", function()
+    local list = menu.get_current_menu_list()
+    if list:isValid() then
+        local cmd = menu.list_get_focus(list)
+        if cmd:isValid() then
+            local t = cmd:getType()
+            if t == COMMAND_INPUT or t == COMMAND_TEXTSLIDER or t == COMMAND_TEXTSLIDER_STATEFUL or t == COMMAND_LIST_SELECT or t == COMMAND_SLIDER or t == COMMAND_SLIDER_FLOAT or t == COMMAND_SLIDER_RAINBOW or t == COMMAND_TOGGLE or t == COMMAND_TOGGLE_NO_CORRELATION or t == COMMAND_TOGGLE_CUSTOM then
+                local val = tostring(cmd.value)
+                if t == COMMAND_SLIDER_FLOAT then
+                    local neg = false
+                    if val:find("-", 1, true) == 1 then
+                        val = val:gsub("-", "")
+                        neg = true
+                    end
+                    if cmd.precision + 1 > #val then
+                        while cmd.precision + 1 > #val do
+                            val = "0"..val
+                        end
+                    end
+                    if neg then val = "-"..val end
+                    val = val:gsub("()", {[#val - cmd.precision + 1]="."})
+                end
+                util.copy_to_clipboard($"{cmd.command_names[1]} {val}")
+                return
+            end
+        end
+    end
+    notify("Invalid menu type.\nIf this appears to be an error, contact the developer.")
+end)
+
+-- Log Ped Sex
+menu.list_action(misc, "Log Player Sex", {""}, "", {"Female", "Male"}, function(val)
+    local s = true
+    local txt = ""
+    local g = {"Female", "Male"}
+    for players.list() as pid do
+        local model = ENTITY.GET_ENTITY_MODEL(PLAYER.GET_PLAYER_PED_SCRIPT_INDEX(pid))
+        if val == 1 then
+            if model == 2627665880 or model == -1667301416 then
+                if s then
+                    s = false
+                    txt = players.get_name(pid)
+                else
+                    txt = txt..", "..players.get_name(pid)
+                end
+            end
+        elseif val == 2 then
+            if model ~= 2627665880 and model ~= -1667301416 then
+                if s then
+                    s = false
+                    txt = players.get_name(pid)
+                else
+                    txt = txt..", "..players.get_name(pid)
+                end
+            end
+        end
+    end
+    if not s then
+        log("Result ("..g[val].."): "..txt)
+    end
+end)
+
+menu.action(misc, "Print #LOC", {""}, "# of Lines Of Code", function()
+    local loc_count = 0
+    local mainfiles = {THIS_SCRIPT_FILE, FUNCS_FILE, FUNCTIONS_FILE}
+    for mainfiles as filename do
+        local file = io.open(filename, "r")
+        if file then
+            for _ in file:lines() do
+                loc_count += 1
+            end
+            file:close()
+        end
+    end
+    for i, group in all_modules do
+        if i != 1 then
+            for group as module do
+                local fname = scriptdir.."lib/"..module.path..".pluto"
+                local file = io.open(fname, "r")
+                if file then
+                    for _ in file:lines() do
+                        loc_count += 1
+                    end
+                    file:close()
+                end
+            end
+        end
+    end
+    local resultTxt = SCRIPT_NAME.." has "..loc_count.." lines of code (not including dev files)."
+    log(resultTxt, "LOC")
+    notify(resultTxt)
+end)
+
+-- Shortcuts
+-- Become Script Host
+menu.action(shortcuts, "Become Script Host", {"lsh"}, "Pretty self explanatory. Just a Shortcut so you dont click on the option below accidentally..", function()
+    trigger_commands("scripthost")
+end)
+
+menu.attach(shortcuts, menu.link(menu.shadow_root(), quit_to_desktop_ref))
+
+menu.action(misc, "Log NAT Type", {""}, "", function()
+    local natTypes = {"Open", "Moderate", "Strict"}
+    local getNatType = util.stat_get_int64("_NatType")
+    for nat, natType in natTypes do
+        if getNatType == nat then
+            log($"NAT Type: {natType}", "Info")
+        end
+    end
+end)
