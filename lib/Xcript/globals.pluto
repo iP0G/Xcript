@@ -2,7 +2,7 @@
 
 -- Globals
 script_version = "0.9"
-dev_vers = false
+dev_vers = true
 
 private_vers = false -- Changing this manually does nothing (obviously).
 
@@ -106,6 +106,21 @@ all_modules = {
         {
             name = "'Events'",
             path = "Xcript/Modules/events"
+        },
+    },
+
+    util_modules = {
+        {
+            name = "'Globals'",
+            path = "Xcript/globals"
+        },
+        {
+            name = "'Funcs'",
+            path = "Xcript/funcs"
+        },
+        {
+            name = "'Functions'",
+            path = "Xcript/globals"
         },
     },
 }
