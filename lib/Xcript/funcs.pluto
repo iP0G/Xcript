@@ -1798,4 +1798,7 @@ function on_remembered_player_join(pid, name)
 end
 
 function FirstScriptLoad()
+    local fsl_msg = "It appears this is your first time using my script. Enjoy :)"
+    log(fsl_msg, "Welcome")
+    notify(fsl_msg)
 end
