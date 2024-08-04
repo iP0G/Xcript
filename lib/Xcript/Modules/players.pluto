@@ -2,6 +2,8 @@
 -- All Players Root
 all_players_list = menu.attach_before(menu.ref_by_path("Players>All Players>Excludes"), menu.list(menu.shadow_root(), SCRIPT_NAME, {}, ""))
 
+for i = 1, 8 do blur[i] = directx.blurrect_new() end
+
 ---------------------
 -- Main
 ---------------------

@@ -2,7 +2,7 @@
 
 -- Globals
 script_version = "0.9.1"
-dev_vers = false
+dev_vers = true
 
 private_vers = false -- Changing this manually does nothing (obviously).
 
@@ -245,7 +245,6 @@ border_width = 1/RES_Y
 blur_strength = 1
 blur_strength_def = 1
 blur = {}
-for i = 1, 8 do blur[i] = directx.blurrect_new() end
 
 --map textures
 textures =
