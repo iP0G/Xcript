@@ -120,7 +120,7 @@ all_modules = {
         },
         {
             name = "'Functions'",
-            path = "Xcript/globals"
+            path = "Xcript/functions"
         },
     },
 }
