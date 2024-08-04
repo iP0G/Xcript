@@ -2,7 +2,7 @@
 
 -- Globals
 script_version = "0.9"
-dev_vers = true
+dev_vers = false
 
 private_vers = false -- Changing this manually does nothing (obviously).
 
