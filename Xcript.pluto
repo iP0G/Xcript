@@ -108,11 +108,16 @@ if !filesystem.exists(storeDir.."Players") then
 	filesystem.mkdir(storeDir.."Players")
 end
 
+if !filesystem.exists(storeDir.."Persistent") then
+	filesystem.mkdir(storeDir.."Persistent")
+end
+
 if !filesystem.exists(PERSISTENT_REMOVEDCOUNT_FILE) then
     local file = io.open(PERSISTENT_REMOVEDCOUNT_FILE, "w")
-    if file == nil then return end
-    file:write("0")
-    file:close()
+    if file != nil then
+        file:write("0")
+        file:close()
+    end
 end
 
 if !filesystem.exists(PREV_EXEC_STORE) then
@@ -121,9 +126,10 @@ end
 
 if !filesystem.exists(PERSISTENT_MODDER_LOGFILE) then
     local file = io.open(PERSISTENT_MODDER_LOGFILE, "w")
-    if file == nil then return end
-    file:write("0")
-    file:close()
+    if file != nil then
+        file:write("0")
+        file:close()
+    end
 end
 
 -- Modules
