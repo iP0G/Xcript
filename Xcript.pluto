@@ -146,6 +146,7 @@ for i, group in all_modules do
                 case 'required_modules':
                     util.toast(msgt..mext2)
                     util.log("[Xcript | ERROR]"..msgt..mext2)
+                    wait(10)
                     util.stop_script()
                     break
                 case 'private_modules':
@@ -205,6 +206,7 @@ util.execute_in_os_thread(function()
                                 notify(txt)
                                 log(txt2, "STOP")
                                 notify(txt2)
+                                wait(10)
                                 util.stop_script()
                                 break
                             case 'private_modules':
