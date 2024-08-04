@@ -34,12 +34,13 @@ if !dev_vers then
     local updateDone = false
     local needsUpdate = false
     async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/version", function(vers_result)
-        if !script_version or vers_result != script_version or missing_util_modules then
+        local repository_vers = string.gsub(vers_result, '%s+', '')
+        if !script_version or repository_vers != script_version or missing_util_modules then
             needsUpdate = true
             if missing_util_modules then
-                util.log("[Xcript | AUTO UPDATE] Attempting to retrieve missing files for version "..vers_result)
+                util.log("[Xcript | AUTO UPDATE] Attempting to retrieve missing files for version "..repository_vers)
             else
-                util.log("[Xcript | AUTO UPDATE] Found new version: "..vers_result)
+                util.log("[Xcript | AUTO UPDATE] Found new version: "..repository_vers)
             end
             local modules = {}
             for all_modules.script_modules as module do
