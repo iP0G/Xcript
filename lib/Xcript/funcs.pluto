@@ -1000,16 +1000,16 @@ function remembered_players_sort_by_date()
 end
 
 function remembered_players_sort_alphebetical()
-    local players = {}
+    local players_list = {}
     for remembered_player_menu:getChildren() as player do
         if is_item_remembered_player(player) then
-            table.insert(players, menu.get_menu_name(player:getPhysical()))
+            table.insert(players_list, menu.get_menu_name(player:getPhysical()))
         end
     end
-    table.sort(players)
+    table.sort(players_list)
 
     local last = nil
-    for i, player in players do
+    for i, player in players_list do
         local player_move = menu.detach(menu.ref_by_rel_path(remembered_player_menu, player))
         if last == nil then
             last = rp_players_div
@@ -1017,7 +1017,7 @@ function remembered_players_sort_alphebetical()
         menu.attach_after(last, player_move)
         -- wait()
     end
-    notify("Sorted "..#players.." Items.")
+    notify("Sorted "..#players_list.." Items.")
 end
 
 function remembered_players_sort_by_manual()
