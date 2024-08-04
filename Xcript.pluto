@@ -33,6 +33,8 @@ if !dev_vers then
     local updateError = false
     local updateDone = false
     local needsUpdate = false
+    local updateModules = 0
+    local updateProgress = 0
     async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/version", function(vers_result)
         local repository_vers = string.gsub(vers_result, '%s+', '')
         if !script_version or repository_vers != script_version or missing_util_modules then
@@ -52,6 +54,7 @@ if !dev_vers then
             for all_modules.util_modules as module do
                 modules[#modules + 1] = module.path
             end
+            updateModules = #modules
             for modules as module do
                 async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/lib/"..module..".pluto", function(result)
                     if !result then
@@ -62,6 +65,7 @@ if !dev_vers then
                     local file = io.open(scriptdir.."lib/"..module..".pluto", "wb")
                     file:write(result)
                     file:close()
+                    updateProgress += 1
                 end,
                 function(err)
                     util.log("[Xcript | ERROR] Error getting update for module: "..module.."\nError: "..err)
@@ -96,6 +100,7 @@ if !dev_vers then
     while !response1 do wait() end
     if needsUpdate then
         while !updateDone do wait() end
+        while updateProgress != updateModules and !updateError do wait() end
     else
         log(SCRIPT_NAME.." is up to date", script_version)
     end
