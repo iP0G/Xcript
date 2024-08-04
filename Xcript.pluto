@@ -122,7 +122,7 @@ if !filesystem.exists(PERSISTENT_REMOVEDCOUNT_FILE) then
 end
 
 if !filesystem.exists(PREV_EXEC_STORE) then
-    WriteExecStore()
+    CreateExecStore()
 end
 
 if !filesystem.exists(PERSISTENT_MODDER_LOGFILE) then
