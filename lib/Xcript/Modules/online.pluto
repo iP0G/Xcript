@@ -312,7 +312,7 @@ local lock_level_opts = menu.list(online, "Lock Level", {""}, default_help)
             menu.divider(session_purge, "Purge:")
 
             -- Purge Tick Handler
-            local purge_list = {}
+            purge_list = {}
             util.create_tick_handler(function()
                 local i = 0
                 if not readyInSession() then goto in_transition end
@@ -1002,7 +1002,7 @@ local lock_level_opts = menu.list(online, "Lock Level", {""}, default_help)
         menu.toggle_loop(dt_t_j, "Thunder Join", {"ldttj"}, "Detects if someone is using thunder join.", function()
             if readyInSession() then
                 for players.list() as pid do
-                    if get_spawn_state(pid) == 0 and players.get_script_host() == pid then
+                    if get_spawn_state(pid) == 4 and players.get_script_host() == pid then
                         if not IsDetectionPresent(pid, "Thunder Join") then
                             players.add_detection(pid, "Thunder Join", 7)
                             local pname = players.get_name(pid)
@@ -1604,7 +1604,7 @@ local lock_level_opts = menu.list(online, "Lock Level", {""}, default_help)
             amr_crash = on
         end)
 
-        local notif_on_afsu = {}
+        notif_on_afsu = {}
         menu.toggle_loop(reactions, "Notify if Another Stand User Attacks You", {""}, "", function()
             if readyInSession() then
                 for players.list(false, true, true) as pid do

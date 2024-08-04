@@ -7,6 +7,13 @@ local debug_menu = menu.list(menu.my_root(), "Debug", {""}, ":)")
 ---------------------
 -- Debug
 
+-- Spawn State All
+debug_menu:action("All Spawn State", {""}, "", function()
+    for players.list() as pid do
+        log(players.get_name(pid)..": "..get_spawn_state(pid), "dd")
+    end
+end)
+
 -- Check All
 debug_menu:action("All Ped Config Flag", {"lapcf"}, "", function(click_type)
     menu.show_command_box("lapcf ")
