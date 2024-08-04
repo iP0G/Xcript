@@ -108,6 +108,7 @@ if !dev_vers then
         wait(10)
         util.log("[Xcript | AUTO UPDATE] Update Success! Restarting "..SCRIPT_NAME.."...")
         util.restart_script()
+        return
     end
 end
 
