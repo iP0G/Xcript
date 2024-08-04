@@ -1360,10 +1360,12 @@ function ReadExecStore()
     for line in file:lines() do
         if line != nil and line != "" then
             EXEC_STORE_DATA[#EXEC_STORE_DATA + 1] = line
+        else
+            EXEC_STORE_DATA[#EXEC_STORE_DATA + 1] = "None"
         end
     end
     file:close()
-    if EXEC_STORE_DATA[1] == "None" then return false end
+    if EXEC_STORE_DATA[1] == "None" or EXEC_STORE_DATA[1] == nil then return false end
     return true
 end
 
