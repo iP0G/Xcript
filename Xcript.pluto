@@ -53,7 +53,7 @@ if !dev_vers then
                 modules[#modules + 1] = module.path
             end
             for modules as module do
-                async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/lib/"..module, function(result)
+                async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/lib/"..module..".pluto", function(result)
                     if !result then
                         util.log("[Xcript | ERROR] Unknown error downloading update.")
                         updateError = true
@@ -69,6 +69,21 @@ if !dev_vers then
                 end)
                 async_http.dispatch()
             end
+            async_http.init("https://raw.githubusercontent.com", "/iP0G/Xcript/main/Xcript.pluto", function(result)
+                if !result then
+                    util.log("[Xcript | ERROR] Unknown error downloading update.")
+                    updateError = true
+                    return
+                end
+                local file = io.open(THIS_SCRIPT_FILE, "wb")
+                file:write(result)
+                file:close()
+            end,
+            function(err)
+                util.log("[Xcript | ERROR] Error getting update for Xcript.pluto\nError: "..err)
+                updateError = true
+            end)
+            async_http.dispatch()
             updateDone = true
         end
         response1 = true
