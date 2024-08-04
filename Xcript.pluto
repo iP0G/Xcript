@@ -59,7 +59,7 @@ if !dev_vers then
                         updateError = true
                         return
                     end
-                    local file = io.open(scriptdir.."lib/"..module, "wb")
+                    local file = io.open(scriptdir.."lib/"..module..".pluto", "wb")
                     file:write(result)
                     file:close()
                 end,
