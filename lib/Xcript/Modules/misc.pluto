@@ -15,7 +15,7 @@ menu.toggle(misc_options_opts, "Log New Session Divider", {""}, "", function(on)
     opt_should_log_new_session = on
 end, true)
 
-menu.list_select(misc_options_opts, "Host Kick Type", {""}, "", {"Love Letter", "Host", "Blacklist"}, 1, function(val)
+menu.list_select(misc_options_opts, "Host Kick Type", {""}, "", {"BattlEye Ban", "Love Letter", "Host", "Blacklist"}, 1, function(val)
     opt_host_kick_type = val
 end)
 
