@@ -1635,10 +1635,12 @@ function kick(pid, flag, reason)
             wait(150)
         end
         if opt_host_kick_type == 1 then
-            trigger_commands("loveletterkick"..pname)
+            trigger_commands("beban"..pname)
         elseif opt_host_kick_type == 2 then
-            trigger_commands("hostkick"..pname)
+            trigger_commands("loveletterkick"..pname)
         elseif opt_host_kick_type == 3 then
+            trigger_commands("hostkick"..pname)
+        elseif opt_host_kick_type == 4 then
             trigger_commands("blacklist"..pname) 
         else --Should never happen
             trigger_commands("kick"..pname)
